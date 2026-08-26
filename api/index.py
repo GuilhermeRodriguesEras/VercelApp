@@ -1,13 +1,13 @@
 import json
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
 
 app = FastAPI()
 
-# Configuração de CORS para aceitar requisições de qualquer origem
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,6 +15,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Captura exceções não tratadas e garante o envio de JSON com cabeçalhos CORS
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Erro interno do servidor: {str(exc)}"},
+    )
 
 TINY_TOKEN = "f751b8c151b478f9472103ef94669425592b01d1"
 
@@ -45,13 +53,13 @@ class PropostaTinyPayload(BaseModel):
     observacoes: Optional[str] = "Somos um E-COMMERCE, não reservamos estoque antes da aprovação do pagamento."
     assinatura: Optional[str] = "Atenciosamente,\nDepartamento de vendas"
 
-
 @app.options("/api/gerar-proposta-tiny")
+@app.options("/gerar-proposta-tiny")
 def options_proposta():
     return {}
 
-
 @app.post("/api/gerar-proposta-tiny")
+@app.post("/gerar-proposta-tiny")
 def criar_proposta_e_obter_pdf(payload: PropostaTinyPayload):
     itens_tiny = []
     for item in payload.carrinho:
