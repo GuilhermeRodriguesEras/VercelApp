@@ -7,6 +7,7 @@ from typing import List, Optional
 
 app = FastAPI()
 
+# Configuração de CORS para aceitar requisições de qualquer origem
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -43,6 +44,12 @@ class PropostaTinyPayload(BaseModel):
     descricao_prazo_entrega: Optional[str] = "IMEDIATO APÓS CONFIRMAÇÃO DO PAGAMENTO"
     observacoes: Optional[str] = "Somos um E-COMMERCE, não reservamos estoque antes da aprovação do pagamento."
     assinatura: Optional[str] = "Atenciosamente,\nDepartamento de vendas"
+
+
+@app.options("/api/gerar-proposta-tiny")
+def options_proposta():
+    return {}
+
 
 @app.post("/api/gerar-proposta-tiny")
 def criar_proposta_e_obter_pdf(payload: PropostaTinyPayload):
