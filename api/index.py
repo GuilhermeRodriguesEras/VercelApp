@@ -16,7 +16,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Captura exceções não tratadas e garante o envio de JSON com cabeçalhos CORS
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
@@ -53,14 +52,14 @@ class PropostaTinyPayload(BaseModel):
     observacoes: Optional[str] = "Somos um E-COMMERCE, não reservamos estoque antes da aprovação do pagamento."
     assinatura: Optional[str] = "Atenciosamente,\nDepartamento de vendas"
 
-@app.options("/api/gerar-proposta-tiny")
-@app.options("/gerar-proposta-tiny")
-def options_proposta():
+# Captura qualquer requisição OPTIONS de pré-voo CORS
+@app.options("/{full_path:path}")
+def options_proposta(full_path: str):
     return {}
 
-@app.post("/api/gerar-proposta-tiny")
-@app.post("/gerar-proposta-tiny")
-def criar_proposta_e_obter_pdf(payload: PropostaTinyPayload):
+# Captura qualquer requisição POST enviada pela Vercel
+@app.post("/{full_path:path}")
+def criar_proposta_e_obter_pdf(payload: PropostaTinyPayload, full_path: str):
     itens_tiny = []
     for item in payload.carrinho:
         itens_tiny.append({
