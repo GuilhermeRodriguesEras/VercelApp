@@ -1696,9 +1696,6 @@ def criar_proposta(
             "forma_envio":
                 payload.forma_envio,
 
-            "nome_vendedor":
-                payload.vendedor,
-
             "obs":
                 (
                     "SOLICITAÇÃO DE COTAÇÃO VIA SITE\n"
