@@ -1,6 +1,3 @@
-fastapi
-uvicorn
+Flask
+flask-cors
 requests
-pydantic
-flask
-flask_cors
