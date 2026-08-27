@@ -50,14 +50,18 @@ def gerar_proposta():
         "condicoes_pagamento": dados_front.get("condicoes_pagamento")
     }
 
+    print(payload_tiny)
+    print("-----------------------------------------------------------------")
+
     headers = {
         "Authorization": f"Bearer {TINY_TOKEN}",
         "Content-Type": "application/json"
     }
     
-    # 2. Fazendo a requisição POST para a API V3 do Tiny
     resp = requests.post(f"{TINY_API_URL}/orcamentos", json=payload_tiny, headers=headers)
     
+    print(resp)
+
     if resp.status_code in [200, 201]:
         return jsonify(resp.json()), resp.status_code
     else:
