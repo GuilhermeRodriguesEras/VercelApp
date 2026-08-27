@@ -565,6 +565,7 @@ def gerar_proposta():
             try:
 
                 resposta_tiny = response.json()
+                print(resposta_tiny)
 
             except Exception:
 
