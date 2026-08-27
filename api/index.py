@@ -91,7 +91,7 @@ def criar_proposta_e_obter_pdf(payload: PropostaTinyPayload, full_path: str):
             }
         }
 
-        url_incluir = "https://api.tiny.com.br/api2/proposta.incluir.php"
+        url_incluir = "https://api.tiny.com.br/api2/propostas.incluir.php"
         
         response_incluir = requests.post(
             url_incluir, 
@@ -107,8 +107,6 @@ def criar_proposta_e_obter_pdf(payload: PropostaTinyPayload, full_path: str):
         try:
             res_incluir = response_incluir.json()
         except Exception:
-            print(f"Erro ao converter JSON do Tiny. HTTP Status: {response_incluir.status_code}")
-            print(f"Conteúdo retornado pelo Tiny: {response_incluir.text}")
             return JSONResponse(
                 status_code=502,
                 content={
@@ -135,7 +133,8 @@ def criar_proposta_e_obter_pdf(payload: PropostaTinyPayload, full_path: str):
 
         id_proposta = propostas[0]["proposta"]["id"]
 
-        url_link = "https://api.tiny.com.br/api2/proposta.obter.link.impressao.php"
+        # URL no plural: propostas.obter.link.impressao.php
+        url_link = "https://api.tiny.com.br/api2/propostas.obter.link.impressao.php"
         response_link = requests.get(
             url_link, 
             params={"token": TINY_TOKEN, "id": id_proposta, "formato": "JSON"},
