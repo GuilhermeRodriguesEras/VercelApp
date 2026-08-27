@@ -1,6 +1,8 @@
+json
 import json
 import requests
-from fastapi import FastAPI, HTTPException, Request
+import traceback
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -15,13 +17,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(
-        status_code=500,
-        content={"detail": f"Erro interno do servidor: {str(exc)}"},
-    )
 
 TINY_TOKEN = "f751b8c151b478f9472103ef94669425592b01d1"
 
@@ -52,74 +47,99 @@ class PropostaTinyPayload(BaseModel):
     observacoes: Optional[str] = "Somos um E-COMMERCE, não reservamos estoque antes da aprovação do pagamento."
     assinatura: Optional[str] = "Atenciosamente,\nDepartamento de vendas"
 
-# Captura qualquer requisição OPTIONS de pré-voo CORS
 @app.options("/{full_path:path}")
 def options_proposta(full_path: str):
-    return {}
+    return JSONResponse(status_code=200, content={"status": "ok"})
 
-# Captura qualquer requisição POST enviada pela Vercel
 @app.post("/{full_path:path}")
 def criar_proposta_e_obter_pdf(payload: PropostaTinyPayload, full_path: str):
-    itens_tiny = []
-    for item in payload.carrinho:
-        itens_tiny.append({
-            "item": {
-                "codigo": item.codigo,
-                "descricao": item.descricao,
-                "unidade": item.unidade,
-                "quantidade": item.quantidade,
-                "valor_unitario": item.preco_unitario
+    try:
+        itens_tiny = []
+        for item in payload.carrinho:
+            itens_tiny.append({
+                "item": {
+                    "codigo": item.codigo,
+                    "descricao": item.descricao,
+                    "unidade": item.unidade,
+                    "quantidade": item.quantidade,
+                    "valor_unitario": item.preco_unitario
+                }
+            })
+
+        dados_proposta = {
+            "proposta": {
+                "natureza_operacao": payload.natureza_operacao,
+                "cliente": {
+                    "nome": payload.cliente.nome,
+                    "cpf_cnpj": payload.cliente.cpf_cnpj,
+                    "aos_cuidados": payload.cliente.aos_cuidados
+                },
+                "vendedor": payload.vendedor,
+                "introducao": payload.introducao,
+                "itens": itens_tiny,
+                "outros_itens": payload.outros_itens_texto,
+                "valor_frete": payload.frete,
+                "valor_desconto": payload.desconto,
+                "forma_envio": payload.forma_envio,
+                "validade": payload.validade_dias,
+                "prazo_entrega": payload.descricao_prazo_entrega,
+                "obs": payload.observacoes,
+                "assinatura": payload.assinatura
             }
-        })
-
-    dados_proposta = {
-        "proposta": {
-            "natureza_operacao": payload.natureza_operacao,
-            "cliente": {
-                "nome": payload.cliente.nome,
-                "cpf_cnpj": payload.cliente.cpf_cnpj,
-                "aos_cuidados": payload.cliente.aos_cuidados
-            },
-            "vendedor": payload.vendedor,
-            "introducao": payload.introducao,
-            "itens": itens_tiny,
-            "outros_itens": payload.outros_itens_texto,
-            "valor_frete": payload.frete,
-            "valor_desconto": payload.desconto,
-            "forma_envio": payload.forma_envio,
-            "validade": payload.validade_dias,
-            "prazo_entrega": payload.descricao_prazo_entrega,
-            "obs": payload.observacoes,
-            "assinatura": payload.assinatura
         }
-    }
 
-    url_incluir = "https://api.tiny.com.br/api2/proposta.incluir.php"
-    
-    res_incluir = requests.post(
-        url_incluir, 
-        data={
-            "token": TINY_TOKEN, 
-            "formato": "JSON", 
-            "proposta": json.dumps(dados_proposta)
-        }
-    ).json()
+        url_incluir = "https://api.tiny.com.br/api2/proposta.incluir.php"
+        
+        response_incluir = requests.post(
+            url_incluir, 
+            data={
+                "token": TINY_TOKEN, 
+                "formato": "JSON", 
+                "proposta": json.dumps(dados_proposta)
+            }
+        )
+        
+        res_incluir = response_incluir.json()
+        print("Resposta do Tiny (Incluir):", res_incluir)
 
-    if res_incluir.get("retorno", {}).get("status") != "OK":
-        erros = res_incluir.get("retorno", {}).get("erros", [])
-        raise HTTPException(status_code=400, detail=f"Erro no Tiny: {erros}")
+        status_tiny = res_incluir.get("retorno", {}).get("status")
+        if status_tiny != "OK":
+            erros = res_incluir.get("retorno", {}).get("erros", [])
+            print("Erro retornado pelo Tiny:", erros)
+            return JSONResponse(
+                status_code=400,
+                content={"status": "erro", "detalhe": f"Erro no Tiny: {erros}"}
+            )
 
-    id_proposta = res_incluir["retorno"]["propostas"][0]["proposta"]["id"]
+        propostas = res_incluir.get("retorno", {}).get("propostas", [])
+        if not propostas:
+            return JSONResponse(
+                status_code=400,
+                content={"status": "erro", "detalhe": "Tiny não retornou o ID da proposta."}
+            )
 
-    url_link = "https://api.tiny.com.br/api2/proposta.obter.link.impressao.php"
-    res_link = requests.get(
-        url_link, 
-        params={"token": TINY_TOKEN, "id": id_proposta, "formato": "JSON"}
-    ).json()
+        id_proposta = propostas[0]["proposta"]["id"]
 
-    link_pdf = res_link.get("retorno", {}).get("link")
-    
-    if not link_pdf:
-        raise HTTPException(status_code=500, detail="Não foi possível gerar o PDF da proposta.")
+        url_link = "https://api.tiny.com.br/api2/proposta.obter.link.impressao.php"
+        res_link = requests.get(
+            url_link, 
+            params={"token": TINY_TOKEN, "id": id_proposta, "formato": "JSON"}
+        ).json()
+        print("Resposta do Tiny (Link):", res_link)
 
-    return {"status": "sucesso", "link_pdf": link_pdf}
+        link_pdf = res_link.get("retorno", {}).get("link")
+        
+        if not link_pdf:
+            return JSONResponse(
+                status_code=500,
+                content={"status": "erro", "detalhe": "Não foi possível obter o link do PDF no Tiny."}
+            )
+
+        return JSONResponse(status_code=200, content={"status": "sucesso", "link_pdf": link_pdf})
+
+    except Exception as e:
+        print("Exceção não tratada:", traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={"status": "erro", "detalhe": str(e)}
+        )
