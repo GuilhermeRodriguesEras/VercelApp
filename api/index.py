@@ -1,4 +1,3 @@
-import os
 import json
 import traceback
 from io import BytesIO
@@ -55,7 +54,7 @@ app.add_middleware(
 # CONFIGURAÇÕES
 # ============================================================
 
-TINY_TOKEN = os.getenv("TINY_TOKEN")
+TINY_TOKEN = "f751b8c151b478f9472103ef94669425592b01d1"
 
 TINY_PEDIDO_URL = (
     "https://api.tiny.com.br/api2/pedido.incluir.php"
