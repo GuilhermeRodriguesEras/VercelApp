@@ -19,6 +19,10 @@ app.add_middleware(
 
 TINY_TOKEN = "f751b8c151b478f9472103ef94669425592b01d1"
 
+HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
 class ItemProposta(BaseModel):
     descricao: str
     codigo: Optional[str] = ""
@@ -95,11 +99,23 @@ def criar_proposta_e_obter_pdf(payload: PropostaTinyPayload, full_path: str):
                 "token": TINY_TOKEN, 
                 "formato": "JSON", 
                 "proposta": json.dumps(dados_proposta)
-            }
+            },
+            headers=HTTP_HEADERS,
+            timeout=15
         )
-        
-        res_incluir = response_incluir.json()
-        print("Resposta do Tiny (Incluir):", res_incluir)
+
+        try:
+            res_incluir = response_incluir.json()
+        except Exception:
+            print(f"Erro ao converter JSON do Tiny. HTTP Status: {response_incluir.status_code}")
+            print(f"Conteúdo retornado pelo Tiny: {response_incluir.text}")
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "status": "erro",
+                    "detalhe": f"Tiny retornou resposta inválida (HTTP {response_incluir.status_code}): {response_incluir.text[:300]}"
+                }
+            )
 
         status_tiny = res_incluir.get("retorno", {}).get("status")
         if status_tiny != "OK":
@@ -120,11 +136,23 @@ def criar_proposta_e_obter_pdf(payload: PropostaTinyPayload, full_path: str):
         id_proposta = propostas[0]["proposta"]["id"]
 
         url_link = "https://api.tiny.com.br/api2/proposta.obter.link.impressao.php"
-        res_link = requests.get(
+        response_link = requests.get(
             url_link, 
-            params={"token": TINY_TOKEN, "id": id_proposta, "formato": "JSON"}
-        ).json()
-        print("Resposta do Tiny (Link):", res_link)
+            params={"token": TINY_TOKEN, "id": id_proposta, "formato": "JSON"},
+            headers=HTTP_HEADERS,
+            timeout=15
+        )
+        
+        try:
+            res_link = response_link.json()
+        except Exception:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "status": "erro",
+                    "detalhe": f"Erro ao obter PDF no Tiny (HTTP {response_link.status_code}): {response_link.text[:300]}"
+                }
+            )
 
         link_pdf = res_link.get("retorno", {}).get("link")
         
