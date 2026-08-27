@@ -145,6 +145,13 @@ def buscar_contato(cpf_cnpj):
 
     if not response.ok:
 
+        print("====================================")
+        print("ERRO AO CONSULTAR CONTATO NO TINY")
+        print("URL:", response.url)
+        print("STATUS:", response.status_code)
+        print("RESPOSTA:", response.text)
+        print("====================================")
+
         raise RuntimeError({
 
             "mensagem":
@@ -156,7 +163,6 @@ def buscar_contato(cpf_cnpj):
             "resposta_tiny":
                 dados
         })
-
 
     contatos = dados.get(
         "itens",
