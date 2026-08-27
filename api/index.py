@@ -31,9 +31,7 @@ TINY_API_URL = (
     "https://api.tiny.com.br/public-api/v3"
 )
 
-TINY_TOKEN = os.environ.get(
-    "TINY_TOKEN"
-)
+TINY_TOKEN = "f751b8c151b478f9472103ef94669425592b01d1"
 
 
 # ============================================================
