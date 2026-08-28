@@ -1124,57 +1124,93 @@ def localizar_contato(
 
     return contatos[0]
 
-def localizar_ou_criar_contato(cpf_cnpj, cliente, dados_front):
 
-    documento = limpar_documento(cpf_cnpj)
+# ============================================================
+# CRIAR CONTATO
+# ============================================================
+
+def criar_contato(dados_front):
+
+    cliente = dados_front.get(
+        "cliente",
+        {}
+    )
+
+    endereco = dados_front.get(
+        "endereco",
+        {}
+    )
+
+    documento = limpar_documento(
+        cliente.get("cpf_cnpj")
+    )
+
+    nome = (
+        cliente.get("nome")
+        or cliente.get("razao_social")
+        or "Cliente da loja"
+    )
 
     if not documento:
         raise TinyAPIError(
             "CPF/CNPJ do cliente não informado."
         )
 
-    # 1. TENTA ENCONTRAR
-    contato = localizar_contato(documento)
-
-    if contato:
-        print(
-            "Contato já existente no Tiny. ID:",
-            contato.get("id")
+    if not nome:
+        raise TinyAPIError(
+            "Nome do cliente não informado."
         )
-        return contato
 
-    # 2. NÃO ENCONTROU → CRIA
-    endereco = dados_front.get("endereco", {})
+    # O código é usado para identificar o contato no Tiny.
+    # Como o CPF/CNPJ é único, ele evita criar códigos
+    # aleatórios e facilita futuras consultas.
+    codigo = f"WEB-{documento}"
 
-    payload_contato = {
-        "nome": cliente.get("nome"),
+    endereco_tiny = {
+        "endereco": endereco.get("logradouro"),
+        "numero": endereco.get("numero"),
+        "complemento": endereco.get("complemento"),
+        "bairro": endereco.get("bairro"),
+        "municipio": endereco.get("cidade"),
+        "cep": endereco.get("cep"),
+        "uf": endereco.get("uf"),
+        "pais": "Brasil"
+    }
+
+    endereco_tiny = {
+        chave: valor
+        for chave, valor in endereco_tiny.items()
+        if valor not in [None, ""]
+    }
+
+    # A API V3 permite criar o contato com os dados do formulário.
+    # Não criamos usuário na Tray; este é somente um contato no Tiny.
+    payload = {
+        "nome": nome,
+        "codigo": codigo,
         "cpfCnpj": documento,
         "email": dados_front.get("email"),
         "telefone": dados_front.get("telefone"),
-        "endereco": {
-            "cep": endereco.get("cep"),
-            "logradouro": endereco.get("logradouro"),
-            "numero": endereco.get("numero"),
-            "bairro": endereco.get("bairro"),
-            "municipio": endereco.get("cidade"),
-            "uf": endereco.get("uf")
-        }
+        "endereco": endereco_tiny,
+        "observacoesDoContato": "Contato criado automaticamente pela solicitação de proposta comercial via site."
+    }
+
+    payload = {
+        chave: valor
+        for chave, valor in payload.items()
+        if valor not in [None, ""]
     }
 
     print("")
     print("========================================")
     print("CRIANDO CONTATO NO TINY")
-    print(json.dumps(
-        payload_contato,
-        indent=2,
-        ensure_ascii=False
-    ))
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
     print("========================================")
 
     response = tiny_request(
         "POST",
         "/contatos",
-        json=payload_contato
+        json=payload
     )
 
     dados = resposta_json(response)
@@ -1183,91 +1219,115 @@ def localizar_ou_criar_contato(cpf_cnpj, cliente, dados_front):
         "POST /contatos:",
         response.status_code
     )
-
-    if response.ok:
-
-        contato_id = (
-            dados.get("id")
-            or
-            dados.get("data", {}).get("id")
-        )
-
-        if not contato_id:
-            raise TinyAPIError(
-                "Tiny criou o contato, mas não retornou o ID.",
-                response.status_code,
-                dados
-            )
-
-        return {
-            "id": contato_id,
-            "cpfCnpj": documento,
-            "nome": cliente.get("nome"),
-            "criado_agora": True
-        }
-
-    # 3. CASO O TINY DIGA QUE JÁ EXISTE,
-    #    TENTA LOCALIZAR NOVAMENTE
-    texto_erro = json.dumps(
-        dados,
-        ensure_ascii=False
-    ).lower()
-
-    if (
-        "já existe" in texto_erro
-        or
-        "ja existe" in texto_erro
-        or
-        "duplic" in texto_erro
-    ):
-
-        print(
-            "Tiny informou que o contato já existe."
-        )
-
-        contato = localizar_contato(documento)
-
-        if contato:
-            return contato
-
-    raise TinyAPIError(
-        "Erro ao criar contato no Tiny.",
-        response.status_code,
+    print(
+        "Resposta criação contato:",
         dados
     )
 
+    if not response.ok:
+        raise TinyAPIError(
+            "Tiny recusou a criação do contato.",
+            response.status_code,
+            dados
+        )
+
+    contato_id = None
+
+    if isinstance(dados, dict):
+        contato_id = dados.get("id")
+
+        if not contato_id and isinstance(dados.get("data"), dict):
+            contato_id = dados["data"].get("id")
+
+    if not contato_id:
+        raise TinyAPIError(
+            "Tiny criou o contato, mas não retornou o ID.",
+            502,
+            dados
+        )
+
+    return {
+        "id": contato_id,
+        "nome": nome,
+        "cpfCnpj": documento,
+        "criado_agora": True,
+        "resposta": dados
+    }
+
 
 # ============================================================
-# NORMALIZAR SKU / CÓDIGO
+# OBTER OU CRIAR CONTATO
 # ============================================================
 
-def normalizar_sku(valor):
+def obter_ou_criar_contato(dados_front):
 
-    if valor is None:
-        return ""
-
-    return str(valor).strip().upper()
-
-
-# ============================================================
-# LOCALIZAR PRODUTO POR SKU / CÓDIGO
-# ============================================================
-
-def localizar_produto_por_sku(
-    sku
-):
-
-    codigo = normalizar_sku(
-        sku
+    cliente = dados_front.get(
+        "cliente",
+        {}
     )
 
-    if not codigo:
+    documento = limpar_documento(
+        cliente.get("cpf_cnpj")
+    )
+
+    if not documento:
+        raise TinyAPIError(
+            "CPF/CNPJ do cliente não informado.",
+            400
+        )
+
+    contato = localizar_contato(
+        documento
+    )
+
+    if contato:
+
+        contato_id = contato.get("id")
+
+        if not contato_id:
+            raise TinyAPIError(
+                "Contato encontrado sem ID.",
+                502,
+                contato
+            )
+
+        print(
+            "Contato encontrado no Tiny. ID:",
+            contato_id
+        )
+
+        return {
+            "id": contato_id,
+            "criado_agora": False,
+            "resposta": contato
+        }
+
+    print(
+        "Contato não encontrado. Criando novo contato..."
+    )
+
+    return criar_contato(
+        dados_front
+    )
+
+
+# ============================================================
+# LOCALIZAR PRODUTO POR GTIN
+# ============================================================
+
+def localizar_produto_por_gtin(
+    gtin
+):
+
+    if not gtin:
+
         return None
 
-    # Na API V3, o parâmetro de consulta é `codigo` e o
-    # resultado do produto informa o código no campo `sku`.
-    # Usamos o REF/SKU do site para encontrar o ID interno
-    # do produto no Tiny.
+
+    gtin = str(
+        gtin
+    ).strip()
+
 
     response = tiny_request(
 
@@ -1277,8 +1337,8 @@ def localizar_produto_por_sku(
 
         params={
 
-            "codigo":
-                codigo,
+            "gtin":
+                gtin,
 
             "limit":
                 100,
@@ -1288,66 +1348,75 @@ def localizar_produto_por_sku(
         }
     )
 
+
     dados = resposta_json(
         response
     )
 
+
     print(
-        "Consulta produto por SKU/código:",
-        codigo,
+        "Consulta produto GTIN",
+        gtin,
         "HTTP",
         response.status_code
     )
+
 
     if not response.ok:
 
         raise TinyAPIError(
 
-            "Erro ao consultar produto pelo SKU/código.",
+            "Erro ao consultar produto pelo GTIN.",
 
             response.status_code,
 
             dados
         )
 
+
     produtos = dados.get(
         "itens",
         []
     )
 
+
     if not produtos:
+
         return None
 
-    # Confirma o código retornado pelo Tiny. Não aceitamos
-    # simplesmente o primeiro/único resultado sem conferir
-    # o SKU, para evitar vincular o produto errado.
 
     for produto in produtos:
 
-        candidatos = [
-            produto.get("sku"),
-            produto.get("codigo")
+        gtins = [
+
+            produto.get(
+                "gtin"
+            ),
+
+            produto.get(
+                "gtinPrincipal"
+            )
         ]
 
-        for codigo_produto in candidatos:
+
+        for gtin_produto in gtins:
 
             if (
-                codigo_produto
+                gtin_produto
                 and
-                normalizar_sku(
-                    codigo_produto
-                ) == codigo
+                str(
+                    gtin_produto
+                ).strip()
+                ==
+                gtin
             ):
-
-                print(
-                    "Produto encontrado pelo SKU/código:",
-                    codigo,
-                    "ID Tiny:",
-                    produto.get("id")
-                )
 
                 return produto
 
+
+    # Não usamos o primeiro resultado como fallback.
+    # O GTIN precisa realmente corresponder ao produto retornado,
+    # evitando associar um produto incorreto ao orçamento.
     return None
 
 
@@ -1483,30 +1552,9 @@ def gerar_proposta():
             }), 400
 
 
-        contato = localizar_ou_criar_contato(
-            cpf_cnpj,
-            cliente,
+        contato = obter_ou_criar_contato(
             dados_front
         )
-        if not contato:
-
-            return jsonify({
-
-                "erro":
-                    "Cliente não encontrado no Tiny.",
-
-                "cpf_cnpj":
-                    limpar_documento(
-                        cpf_cnpj
-                    ),
-
-                "orientacao":
-                    (
-                        "Cadastre o cliente no Tiny "
-                        "antes de gerar a proposta."
-                    )
-
-            }), 404
 
 
         contato_id = contato.get(
@@ -1516,15 +1564,11 @@ def gerar_proposta():
 
         if not contato_id:
 
-            return jsonify({
-
-                "erro":
-                    "Contato encontrado sem ID.",
-
-                "contato":
-                    contato
-
-            }), 502
+            raise TinyAPIError(
+                "Não foi possível obter o ID do contato.",
+                502,
+                contato
+            )
 
 
         # ====================================================
@@ -1559,32 +1603,26 @@ def gerar_proposta():
             start=1
         ):
 
-            sku = (
+            gtin = (
 
                 item.get(
-                    "sku"
+                    "gtin"
                 )
 
                 or
 
                 item.get(
-                    "codigo"
-                )
-
-                or
-
-                item.get(
-                    "ref"
+                    "ean"
                 )
             )
 
 
-            if not sku:
+            if not gtin:
 
                 return jsonify({
 
                     "erro":
-                        "Produto sem SKU/REF.",
+                        "Produto sem GTIN.",
 
                     "item":
                         indice,
@@ -1595,8 +1633,8 @@ def gerar_proposta():
                 }), 400
 
 
-            produto = localizar_produto_por_sku(
-                sku
+            produto = localizar_produto_por_gtin(
+                gtin
             )
 
 
@@ -1605,13 +1643,13 @@ def gerar_proposta():
                 return jsonify({
 
                     "erro":
-                        "Produto não encontrado no Tiny pelo SKU/código.",
+                        "Produto não encontrado no Tiny pelo GTIN.",
 
                     "item":
                         indice,
 
-                    "sku":
-                        sku,
+                    "gtin":
+                        gtin,
 
                     "nome_site":
                         (
@@ -1730,7 +1768,20 @@ def gerar_proposta():
                     "Somos um E-COMMERCE, "
                     "não reservamos estoque antes "
                     "da aprovação do pagamento."
-                )
+                ),
+
+            "condicoesComerciais": {
+
+                "textoLivre":
+                    (
+                        dados_front.get(
+                            "condicoes_pagamento"
+                        )
+                        or
+                        "Pagamento à vista ou via "
+                        "cartão de crédito."
+                    )
+            }
         }
 
 
@@ -1874,6 +1925,11 @@ def gerar_proposta():
                 "id":
                     orcamento_id,
 
+                "contato": {
+                    "id": contato_id,
+                    "criado_agora": contato.get("criado_agora", False)
+                },
+
                 "criacao":
                     dados_criacao,
 
@@ -1892,6 +1948,11 @@ def gerar_proposta():
 
             "id":
                 orcamento_id,
+
+            "contato": {
+                "id": contato_id,
+                "criado_agora": contato.get("criado_agora", False)
+            },
 
             "criacao":
                 dados_criacao,
