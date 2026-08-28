@@ -1536,113 +1536,86 @@ def obter_ou_criar_contato(dados_front):
 
 
 # ============================================================
-# LOCALIZAR PRODUTO POR GTIN
+# LOCALIZAR PRODUTO POR SKU
 # ============================================================
 
-def localizar_produto_por_gtin(
-    gtin
+def localizar_produto_por_sku(
+    sku
 ):
 
-    if not gtin:
-
+    if not sku:
         return None
 
+    # SKU é um código e pode conter letras, números, hífens etc.
+    # Portanto, não fazemos a normalização numérica usada no GTIN.
+    sku = str(sku).strip()
 
-    gtin = "".join(
-        c for c in str(gtin)
-        if c.isdigit()
-    )
-
+    if not sku:
+        return None
 
     response = tiny_request(
-
         "GET",
-
         "/produtos",
-
         params={
-
-            "gtin":
-                gtin,
-
+            "codigo":
+                sku,
             "limit":
                 100,
-
             "offset":
                 0
         }
     )
 
-
     dados = resposta_json(
         response
     )
 
-
     print(
-        "Consulta produto GTIN",
-        gtin,
+        "Consulta produto SKU",
+        sku,
         "HTTP",
         response.status_code
     )
 
-
     if not response.ok:
-
         raise TinyAPIError(
-
-            "Erro ao consultar produto pelo GTIN.",
-
+            "Erro ao consultar produto pelo SKU.",
             response.status_code,
-
             dados
         )
-
 
     produtos = dados.get(
         "itens",
         []
     )
 
-
     if not produtos:
-
         return None
 
+    # Não usamos o primeiro resultado como fallback.
+    # O código/SKU precisa corresponder exatamente ao SKU recebido
+    # para evitar associar um produto incorreto ao orçamento.
+    sku_normalizado = sku.casefold()
 
     for produto in produtos:
+        codigo_produto = produto.get(
+            "codigo"
+        )
 
-        gtins = [
+        if codigo_produto is None:
+            continue
 
-            produto.get(
-                "gtin"
-            ),
+        codigo_normalizado = str(
+            codigo_produto
+        ).strip().casefold()
 
-            produto.get(
-                "gtinPrincipal"
-            )
-        ]
+        if (
+            codigo_normalizado
+            and
+            codigo_normalizado == sku_normalizado
+        ):
+            return produto
 
-
-        for gtin_produto in gtins:
-
-            gtin_produto_normalizado = "".join(
-                c for c in str(gtin_produto)
-                if c.isdigit()
-            ) if gtin_produto else ""
-
-            if (
-                gtin_produto_normalizado
-                and
-                gtin_produto_normalizado == gtin
-            ):
-
-                return produto
-
-
-    # Não usamos o primeiro resultado como fallback.
-    # O GTIN precisa realmente corresponder ao produto retornado,
-    # evitando associar um produto incorreto ao orçamento.
     return None
 
 
@@ -1829,26 +1802,19 @@ def gerar_proposta():
             start=1
         ):
 
-            gtin = (
-
-                item.get(
-                    "gtin"
-                )
-
-                or
-
-                item.get(
-                    "ean"
-                )
+            sku = item.get(
+                "sku"
             )
 
+            if sku is not None:
+                sku = str(sku).strip()
 
-            if not gtin:
+            if not sku:
 
                 return jsonify({
 
                     "erro":
-                        "Produto sem GTIN.",
+                        "Produto sem SKU.",
 
                     "item":
                         indice,
@@ -1859,8 +1825,8 @@ def gerar_proposta():
                 }), 400
 
 
-            produto = localizar_produto_por_gtin(
-                gtin
+            produto = localizar_produto_por_sku(
+                sku
             )
 
 
@@ -1869,13 +1835,13 @@ def gerar_proposta():
                 return jsonify({
 
                     "erro":
-                        "Produto não encontrado no Tiny pelo GTIN.",
+                        "Produto não encontrado no Tiny pelo SKU.",
 
                     "item":
                         indice,
 
-                    "gtin":
-                        gtin,
+                    "sku":
+                        sku,
 
                     "nome_site":
                         (
