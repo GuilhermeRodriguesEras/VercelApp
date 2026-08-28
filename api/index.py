@@ -1126,6 +1126,192 @@ def localizar_contato(
 
 
 # ============================================================
+# CRIAR CONTATO
+# ============================================================
+
+def criar_contato(dados_front):
+
+    cliente = dados_front.get(
+        "cliente",
+        {}
+    )
+
+    endereco = dados_front.get(
+        "endereco",
+        {}
+    )
+
+    documento = limpar_documento(
+        cliente.get("cpf_cnpj")
+    )
+
+    nome = (
+        cliente.get("nome")
+        or cliente.get("razao_social")
+        or "Cliente da loja"
+    )
+
+    if not documento:
+        raise TinyAPIError(
+            "CPF/CNPJ do cliente não informado."
+        )
+
+    if not nome:
+        raise TinyAPIError(
+            "Nome do cliente não informado."
+        )
+
+    # O código é usado para identificar o contato no Tiny.
+    # Como o CPF/CNPJ é único, ele evita criar códigos
+    # aleatórios e facilita futuras consultas.
+    codigo = f"WEB-{documento}"
+
+    endereco_tiny = {
+        "endereco": endereco.get("logradouro"),
+        "numero": endereco.get("numero"),
+        "complemento": endereco.get("complemento"),
+        "bairro": endereco.get("bairro"),
+        "municipio": endereco.get("cidade"),
+        "cep": endereco.get("cep"),
+        "uf": endereco.get("uf"),
+        "pais": "Brasil"
+    }
+
+    endereco_tiny = {
+        chave: valor
+        for chave, valor in endereco_tiny.items()
+        if valor not in [None, ""]
+    }
+
+    # A API V3 permite criar o contato com os dados do formulário.
+    # Não criamos usuário na Tray; este é somente um contato no Tiny.
+    payload = {
+        "nome": nome,
+        "codigo": codigo,
+        "cpfCnpj": documento,
+        "email": dados_front.get("email"),
+        "telefone": dados_front.get("telefone"),
+        "endereco": endereco_tiny,
+        "observacoesDoContato": "Contato criado automaticamente pela solicitação de proposta comercial via site."
+    }
+
+    payload = {
+        chave: valor
+        for chave, valor in payload.items()
+        if valor not in [None, ""]
+    }
+
+    print("")
+    print("========================================")
+    print("CRIANDO CONTATO NO TINY")
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    print("========================================")
+
+    response = tiny_request(
+        "POST",
+        "/contatos",
+        json=payload
+    )
+
+    dados = resposta_json(response)
+
+    print(
+        "POST /contatos:",
+        response.status_code
+    )
+    print(
+        "Resposta criação contato:",
+        dados
+    )
+
+    if not response.ok:
+        raise TinyAPIError(
+            "Tiny recusou a criação do contato.",
+            response.status_code,
+            dados
+        )
+
+    contato_id = None
+
+    if isinstance(dados, dict):
+        contato_id = dados.get("id")
+
+        if not contato_id and isinstance(dados.get("data"), dict):
+            contato_id = dados["data"].get("id")
+
+    if not contato_id:
+        raise TinyAPIError(
+            "Tiny criou o contato, mas não retornou o ID.",
+            502,
+            dados
+        )
+
+    return {
+        "id": contato_id,
+        "nome": nome,
+        "cpfCnpj": documento,
+        "criado_agora": True,
+        "resposta": dados
+    }
+
+
+# ============================================================
+# OBTER OU CRIAR CONTATO
+# ============================================================
+
+def obter_ou_criar_contato(dados_front):
+
+    cliente = dados_front.get(
+        "cliente",
+        {}
+    )
+
+    documento = limpar_documento(
+        cliente.get("cpf_cnpj")
+    )
+
+    if not documento:
+        raise TinyAPIError(
+            "CPF/CNPJ do cliente não informado.",
+            400
+        )
+
+    contato = localizar_contato(
+        documento
+    )
+
+    if contato:
+
+        contato_id = contato.get("id")
+
+        if not contato_id:
+            raise TinyAPIError(
+                "Contato encontrado sem ID.",
+                502,
+                contato
+            )
+
+        print(
+            "Contato encontrado no Tiny. ID:",
+            contato_id
+        )
+
+        return {
+            "id": contato_id,
+            "criado_agora": False,
+            "resposta": contato
+        }
+
+    print(
+        "Contato não encontrado. Criando novo contato..."
+    )
+
+    return criar_contato(
+        dados_front
+    )
+
+
+# ============================================================
 # LOCALIZAR PRODUTO POR GTIN
 # ============================================================
 
@@ -1228,11 +1414,9 @@ def localizar_produto_por_gtin(
                 return produto
 
 
-    if len(produtos) == 1:
-
-        return produtos[0]
-
-
+    # Não usamos o primeiro resultado como fallback.
+    # O GTIN precisa realmente corresponder ao produto retornado,
+    # evitando associar um produto incorreto ao orçamento.
     return None
 
 
@@ -1368,30 +1552,9 @@ def gerar_proposta():
             }), 400
 
 
-        contato = localizar_contato(
-            cpf_cnpj
+        contato = obter_ou_criar_contato(
+            dados_front
         )
-
-
-        if not contato:
-
-            return jsonify({
-
-                "erro":
-                    "Cliente não encontrado no Tiny.",
-
-                "cpf_cnpj":
-                    limpar_documento(
-                        cpf_cnpj
-                    ),
-
-                "orientacao":
-                    (
-                        "Cadastre o cliente no Tiny "
-                        "antes de gerar a proposta."
-                    )
-
-            }), 404
 
 
         contato_id = contato.get(
@@ -1401,15 +1564,11 @@ def gerar_proposta():
 
         if not contato_id:
 
-            return jsonify({
-
-                "erro":
-                    "Contato encontrado sem ID.",
-
-                "contato":
-                    contato
-
-            }), 502
+            raise TinyAPIError(
+                "Não foi possível obter o ID do contato.",
+                502,
+                contato
+            )
 
 
         # ====================================================
@@ -1766,6 +1925,11 @@ def gerar_proposta():
                 "id":
                     orcamento_id,
 
+                "contato": {
+                    "id": contato_id,
+                    "criado_agora": contato.get("criado_agora", False)
+                },
+
                 "criacao":
                     dados_criacao,
 
@@ -1784,6 +1948,11 @@ def gerar_proposta():
 
             "id":
                 orcamento_id,
+
+            "contato": {
+                "id": contato_id,
+                "criado_agora": contato.get("criado_agora", False)
+            },
 
             "criacao":
                 dados_criacao,
