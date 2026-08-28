@@ -1,10 +1,12 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 
 import requests
 import os
-import traceback
-from datetime import datetime
+import json
+import secrets
+import time
+from urllib.parse import urlencode
 
 
 # ============================================================
@@ -24,31 +26,283 @@ CORS(
 
 
 # ============================================================
-# CONFIGURAÇÕES
+# TINY / OLIST API V3
 # ============================================================
 
-TINY_API_URL = (
-    "https://api.tiny.com.br/public-api/v3"
+TINY_API_URL = "https://api.tiny.com.br/public-api/v3"
+
+TINY_AUTH_URL = (
+    "https://accounts.tiny.com.br/"
+    "realms/tiny/protocol/openid-connect/auth"
 )
 
-TINY_TOKEN = "f751b8c151b478f9472103ef94669425592b01d1"
+TINY_TOKEN_URL = (
+    "https://accounts.tiny.com.br/"
+    "realms/tiny/protocol/openid-connect/token"
+)
+
+
+# ============================================================
+# VARIÁVEIS DE AMBIENTE
+# ============================================================
+
+TINY_CLIENT_ID = os.environ.get(
+    "TINY_CLIENT_ID"
+)
+
+TINY_CLIENT_SECRET = os.environ.get(
+    "TINY_CLIENT_SECRET"
+)
+
+TINY_REDIRECT_URI = os.environ.get(
+    "TINY_REDIRECT_URI"
+)
+
+
+# ============================================================
+# UPSTASH REDIS
+#
+# Quando o Upstash é conectado à Vercel, normalmente essas
+# variáveis são disponibilizadas automaticamente.
+# ============================================================
+
+REDIS_URL = (
+    os.environ.get("UPSTASH_REDIS_REST_URL")
+    or
+    os.environ.get("KV_REST_API_URL")
+)
+
+REDIS_TOKEN = (
+    os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+    or
+    os.environ.get("KV_REST_API_TOKEN")
+)
+
+
+# ============================================================
+# CHAVES REDIS
+# ============================================================
+
+TINY_TOKEN_KEY = "tiny:oauth:tokens"
+
+OAUTH_STATE_KEY = "tiny:oauth:state"
+
+
+# ============================================================
+# ERRO PERSONALIZADO
+# ============================================================
+
+class TinyAPIError(Exception):
+
+    def __init__(
+        self,
+        mensagem,
+        status=None,
+        resposta=None
+    ):
+
+        super().__init__(mensagem)
+
+        self.mensagem = mensagem
+        self.status = status
+        self.resposta = resposta
+
+
+# ============================================================
+# REDIS
+# ============================================================
+
+def redis_disponivel():
+
+    return bool(
+        REDIS_URL
+        and REDIS_TOKEN
+    )
+
+
+def redis_request(
+    comando,
+    *argumentos
+):
+
+    if not redis_disponivel():
+
+        raise RuntimeError(
+            "Upstash Redis não está configurado."
+        )
+
+
+    url = REDIS_URL.rstrip("/") + "/"
+
+
+    payload = [
+        comando,
+        *argumentos
+    ]
+
+
+    response = requests.post(
+        url,
+        headers={
+            "Authorization":
+                f"Bearer {REDIS_TOKEN}",
+
+            "Content-Type":
+                "application/json"
+        },
+        json=payload,
+        timeout=10
+    )
+
+
+    if not response.ok:
+
+        raise RuntimeError(
+            "Erro ao acessar Upstash Redis: "
+            f"HTTP {response.status_code} "
+            f"{response.text}"
+        )
+
+
+    dados = response.json()
+
+    return dados.get("result")
+
+
+def redis_get(chave):
+
+    return redis_request(
+        "GET",
+        chave
+    )
+
+
+def redis_set(
+    chave,
+    valor,
+    expiracao=None
+):
+
+    if expiracao:
+
+        return redis_request(
+            "SET",
+            chave,
+            valor,
+            "EX",
+            str(expiracao)
+        )
+
+
+    return redis_request(
+        "SET",
+        chave,
+        valor
+    )
+
+
+def redis_delete(chave):
+
+    return redis_request(
+        "DEL",
+        chave
+    )
+
+
+# ============================================================
+# TOKENS
+# ============================================================
+
+def carregar_tokens():
+
+    valor = redis_get(
+        TINY_TOKEN_KEY
+    )
+
+
+    if not valor:
+
+        return None
+
+
+    try:
+
+        return json.loads(
+            valor
+        )
+
+    except Exception:
+
+        print(
+            "ERRO: tokens armazenados no Redis "
+            "não são um JSON válido."
+        )
+
+        return None
+
+
+def salvar_tokens(
+    access_token,
+    refresh_token,
+    expires_in
+):
+
+    agora = int(
+        time.time()
+    )
+
+
+    # Margem de segurança de 60 segundos.
+    expires_at = (
+        agora
+        + int(expires_in or 3600)
+        - 60
+    )
+
+
+    dados = {
+
+        "access_token":
+            access_token,
+
+        "refresh_token":
+            refresh_token,
+
+        "expires_at":
+            expires_at,
+
+        "updated_at":
+            agora
+    }
+
+
+    redis_set(
+
+        TINY_TOKEN_KEY,
+
+        json.dumps(
+            dados
+        )
+    )
+
+
+    print(
+        "Tokens OAuth salvos no Upstash Redis."
+    )
 
 
 # ============================================================
 # HEADERS TINY
 # ============================================================
 
-def tiny_headers():
-
-    if not TINY_TOKEN:
-
-        raise RuntimeError(
-            "A variável TINY_TOKEN não está configurada na Vercel."
-        )
+def headers_tiny(
+    access_token
+):
 
     return {
+
         "Authorization":
-            f"Bearer {TINY_TOKEN}",
+            f"Bearer {access_token}",
 
         "Content-Type":
             "application/json",
@@ -59,42 +313,728 @@ def tiny_headers():
 
 
 # ============================================================
-# LIMPAR CPF / CNPJ
+# CONVERTER RESPOSTA
 # ============================================================
 
-def limpar_documento(valor):
-
-    if not valor:
-        return ""
-
-    return "".join(
-        caractere
-        for caractere in str(valor)
-        if caractere.isdigit()
-    )
-
-
-# ============================================================
-# CONVERTER RESPOSTA TINY
-# ============================================================
-
-def resposta_json(response):
+def resposta_json(
+    response
+):
 
     try:
+
         return response.json()
 
     except Exception:
 
+        return response.text
+
+
+# ============================================================
+# OAUTH - AUTORIZAR
+# ============================================================
+
+@app.route(
+    "/api/oauth/autorizar",
+    methods=["GET"]
+)
+def oauth_autorizar():
+
+    if not TINY_CLIENT_ID:
+
+        return jsonify({
+
+            "erro":
+                "TINY_CLIENT_ID não configurado na Vercel."
+
+        }), 500
+
+
+    if not TINY_CLIENT_SECRET:
+
+        return jsonify({
+
+            "erro":
+                "TINY_CLIENT_SECRET não configurado na Vercel."
+
+        }), 500
+
+
+    if not TINY_REDIRECT_URI:
+
+        return jsonify({
+
+            "erro":
+                "TINY_REDIRECT_URI não configurado na Vercel."
+
+        }), 500
+
+
+    if not redis_disponivel():
+
+        return jsonify({
+
+            "erro":
+                "Upstash Redis não configurado.",
+
+            "REDIS_URL":
+                bool(REDIS_URL),
+
+            "REDIS_TOKEN":
+                bool(REDIS_TOKEN)
+
+        }), 500
+
+
+    # ========================================================
+    # STATE DE SEGURANÇA
+    # ========================================================
+
+    state = secrets.token_urlsafe(
+        32
+    )
+
+
+    # Estado válido por 10 minutos.
+
+    redis_set(
+        OAUTH_STATE_KEY,
+        state,
+        600
+    )
+
+
+    parametros = {
+
+        "client_id":
+            TINY_CLIENT_ID,
+
+        "redirect_uri":
+            TINY_REDIRECT_URI,
+
+        "response_type":
+            "code",
+
+        "state":
+            state
+    }
+
+
+    url = (
+        TINY_AUTH_URL
+        + "?"
+        + urlencode(parametros)
+    )
+
+
+    print(
+        "Iniciando autorização OAuth Tiny."
+    )
+
+
+    return redirect(
+        url
+    )
+
+
+# ============================================================
+# OAUTH - CALLBACK
+# ============================================================
+
+@app.route(
+    "/api/oauth/callback",
+    methods=["GET"]
+)
+def oauth_callback():
+
+    codigo = request.args.get(
+        "code"
+    )
+
+    state = request.args.get(
+        "state"
+    )
+
+    erro = request.args.get(
+        "error"
+    )
+
+
+    if erro:
+
+        return jsonify({
+
+            "erro":
+                "O Tiny recusou a autorização.",
+
+            "detalhes":
+                erro,
+
+            "descricao":
+                request.args.get(
+                    "error_description"
+                )
+
+        }), 400
+
+
+    if not codigo:
+
+        return jsonify({
+
+            "erro":
+                "Código de autorização não recebido."
+
+        }), 400
+
+
+    if not state:
+
+        return jsonify({
+
+            "erro":
+                "State OAuth não recebido."
+
+        }), 400
+
+
+    # ========================================================
+    # VALIDAR STATE
+    # ========================================================
+
+    state_salvo = redis_get(
+        OAUTH_STATE_KEY
+    )
+
+
+    if not state_salvo:
+
+        return jsonify({
+
+            "erro":
+                "State OAuth expirado ou inexistente.",
+
+            "orientacao":
+                "Acesse /api/oauth/autorizar novamente."
+
+        }), 400
+
+
+    if not secrets.compare_digest(
+        str(state_salvo),
+        str(state)
+    ):
+
+        return jsonify({
+
+            "erro":
+                "State OAuth inválido."
+
+        }), 400
+
+
+    # Impede reutilização.
+
+    redis_delete(
+        OAUTH_STATE_KEY
+    )
+
+
+    # ========================================================
+    # TROCAR CODE POR TOKENS
+    # ========================================================
+
+    try:
+
+        response = requests.post(
+
+            TINY_TOKEN_URL,
+
+            data={
+
+                "grant_type":
+                    "authorization_code",
+
+                "client_id":
+                    TINY_CLIENT_ID,
+
+                "client_secret":
+                    TINY_CLIENT_SECRET,
+
+                "redirect_uri":
+                    TINY_REDIRECT_URI,
+
+                "code":
+                    codigo
+            },
+
+            headers={
+
+                "Accept":
+                    "application/json",
+
+                "Content-Type":
+                    "application/x-www-form-urlencoded"
+            },
+
+            timeout=30
+        )
+
+
+        dados = resposta_json(
+            response
+        )
+
+
+        print(
+            "OAuth Tiny HTTP:",
+            response.status_code
+        )
+
+
+        if not response.ok:
+
+            print(
+                "Resposta OAuth:",
+                dados
+            )
+
+
+            return jsonify({
+
+                "erro":
+                    "Tiny recusou a troca do código.",
+
+                "status_tiny":
+                    response.status_code,
+
+                "resposta_tiny":
+                    dados
+
+            }), 502
+
+
+        access_token = dados.get(
+            "access_token"
+        )
+
+        refresh_token = dados.get(
+            "refresh_token"
+        )
+
+        expires_in = dados.get(
+            "expires_in",
+            3600
+        )
+
+
+        if not access_token:
+
+            return jsonify({
+
+                "erro":
+                    "Tiny não retornou access_token.",
+
+                "resposta_tiny":
+                    dados
+
+            }), 502
+
+
+        if not refresh_token:
+
+            return jsonify({
+
+                "erro":
+                    "Tiny não retornou refresh_token.",
+
+                "resposta_tiny":
+                    dados
+
+            }), 502
+
+
+        # ====================================================
+        # SALVAR NO UPSTASH
+        # ====================================================
+
+        salvar_tokens(
+
+            access_token,
+
+            refresh_token,
+
+            expires_in
+        )
+
+
+        return jsonify({
+
+            "sucesso":
+                True,
+
+            "mensagem":
+                (
+                    "Aplicação autorizada com sucesso. "
+                    "Os tokens foram armazenados "
+                    "automaticamente no Upstash Redis."
+                ),
+
+            "expira_em_segundos":
+                expires_in,
+
+            "proximo_passo":
+                (
+                    "A integração já pode utilizar "
+                    "/api/gerar-proposta."
+                )
+
+        }), 200
+
+
+    except requests.RequestException as e:
+
+        return jsonify({
+
+            "erro":
+                "Erro de comunicação com o OAuth do Tiny.",
+
+            "detalhes":
+                str(e)
+
+        }), 502
+
+
+# ============================================================
+# RENOVAR ACCESS TOKEN
+# ============================================================
+
+def renovar_access_token(
+    tokens
+):
+
+    refresh_token = tokens.get(
+        "refresh_token"
+    )
+
+
+    if not refresh_token:
+
+        raise TinyAPIError(
+            "Refresh token não encontrado."
+        )
+
+
+    try:
+
+        response = requests.post(
+
+            TINY_TOKEN_URL,
+
+            data={
+
+                "grant_type":
+                    "refresh_token",
+
+                "client_id":
+                    TINY_CLIENT_ID,
+
+                "client_secret":
+                    TINY_CLIENT_SECRET,
+
+                "refresh_token":
+                    refresh_token
+            },
+
+            headers={
+
+                "Accept":
+                    "application/json",
+
+                "Content-Type":
+                    "application/x-www-form-urlencoded"
+            },
+
+            timeout=30
+        )
+
+
+        dados = resposta_json(
+            response
+        )
+
+
+        print(
+            "Renovação OAuth Tiny HTTP:",
+            response.status_code
+        )
+
+
+        if not response.ok:
+
+            raise TinyAPIError(
+
+                "Não foi possível renovar o access token.",
+
+                response.status_code,
+
+                dados
+            )
+
+
+        novo_access_token = dados.get(
+            "access_token"
+        )
+
+
+        # Alguns fluxos retornam um novo refresh token.
+        # Se não retornar, mantemos o anterior.
+
+        novo_refresh_token = (
+
+            dados.get(
+                "refresh_token"
+            )
+
+            or
+
+            refresh_token
+        )
+
+
+        expires_in = dados.get(
+            "expires_in",
+            3600
+        )
+
+
+        if not novo_access_token:
+
+            raise TinyAPIError(
+                "Tiny não retornou novo access_token."
+            )
+
+
+        salvar_tokens(
+
+            novo_access_token,
+
+            novo_refresh_token,
+
+            expires_in
+        )
+
+
         return {
-            "mensagem": response.text
+
+            "access_token":
+                novo_access_token,
+
+            "refresh_token":
+                novo_refresh_token,
+
+            "expires_in":
+                expires_in
         }
 
 
+    except requests.RequestException as e:
+
+        raise TinyAPIError(
+
+            "Erro de comunicação durante "
+            "a renovação do token.",
+
+            None,
+
+            str(e)
+        )
+
+
 # ============================================================
-# BUSCAR CONTATO
+# OBTER ACCESS TOKEN VÁLIDO
 # ============================================================
 
-def buscar_contato(cpf_cnpj):
+def obter_access_token():
+
+    tokens = carregar_tokens()
+
+
+    if not tokens:
+
+        raise TinyAPIError(
+
+            "A aplicação ainda não foi autorizada no Tiny.",
+
+            401,
+
+            {
+                "autorizacao":
+                    "/api/oauth/autorizar"
+            }
+        )
+
+
+    access_token = tokens.get(
+        "access_token"
+    )
+
+    expires_at = int(
+        tokens.get(
+            "expires_at",
+            0
+        )
+    )
+
+
+    agora = int(
+        time.time()
+    )
+
+
+    if (
+        access_token
+        and
+        agora < expires_at
+    ):
+
+        return access_token
+
+
+    print(
+        "Access token expirado. Renovando..."
+    )
+
+
+    novos_tokens = renovar_access_token(
+        tokens
+    )
+
+
+    return novos_tokens[
+        "access_token"
+    ]
+
+
+# ============================================================
+# REQUEST AUTENTICADO AO TINY
+# ============================================================
+
+def tiny_request(
+    metodo,
+    endpoint,
+    **kwargs
+):
+
+    access_token = obter_access_token()
+
+
+    response = requests.request(
+
+        metodo,
+
+        f"{TINY_API_URL}{endpoint}",
+
+        headers=headers_tiny(
+            access_token
+        ),
+
+        timeout=30,
+
+        **kwargs
+    )
+
+
+    # ========================================================
+    # 401 → TOKEN PODE TER EXPIRADO
+    # ========================================================
+
+    if response.status_code == 401:
+
+        print(
+            "Tiny retornou HTTP 401."
+        )
+
+        print(
+            "Tentando renovar o access token..."
+        )
+
+
+        tokens = carregar_tokens()
+
+
+        if not tokens:
+
+            raise TinyAPIError(
+
+                "Tokens OAuth não encontrados.",
+
+                401,
+
+                resposta_json(
+                    response
+                )
+            )
+
+
+        novos_tokens = renovar_access_token(
+            tokens
+        )
+
+
+        response = requests.request(
+
+            metodo,
+
+            f"{TINY_API_URL}{endpoint}",
+
+            headers=headers_tiny(
+
+                novos_tokens[
+                    "access_token"
+                ]
+            ),
+
+            timeout=30,
+
+            **kwargs
+        )
+
+
+    return response
+
+
+# ============================================================
+# LIMPAR CPF/CNPJ
+# ============================================================
+
+def limpar_documento(
+    valor
+):
+
+    if not valor:
+
+        return ""
+
+
+    return "".join(
+
+        c
+
+        for c in str(
+            valor
+        )
+
+        if c.isdigit()
+    )
+
+
+# ============================================================
+# LOCALIZAR CONTATO
+# ============================================================
+
+def localizar_contato(
+    cpf_cnpj
+):
 
     documento = limpar_documento(
         cpf_cnpj
@@ -103,38 +1043,28 @@ def buscar_contato(cpf_cnpj):
 
     if not documento:
 
-        raise ValueError(
-            "CPF/CNPJ não informado."
+        raise TinyAPIError(
+            "CPF/CNPJ do cliente não informado."
         )
 
 
-    url = (
-        f"{TINY_API_URL}/contatos"
-    )
+    response = tiny_request(
 
+        "GET",
 
-    params = {
+        "/contatos",
 
-        "cpfCnpj":
-            documento,
+        params={
 
-        "limit":
-            100,
+            "cpfCnpj":
+                documento,
 
-        "offset":
-            0
-    }
+            "limit":
+                100,
 
-
-    response = requests.get(
-
-        url,
-
-        headers=tiny_headers(),
-
-        params=params,
-
-        timeout=30
+            "offset":
+                0
+        }
     )
 
 
@@ -143,26 +1073,23 @@ def buscar_contato(cpf_cnpj):
     )
 
 
+    print(
+        "Consulta contato:",
+        response.status_code
+    )
+
+
     if not response.ok:
 
-        print("====================================")
-        print("ERRO AO CONSULTAR CONTATO NO TINY")
-        print("URL:", response.url)
-        print("STATUS:", response.status_code)
-        print("RESPOSTA:", response.text)
-        print("====================================")
+        raise TinyAPIError(
 
-        raise RuntimeError({
+            "Erro ao consultar contato no Tiny.",
 
-            "mensagem":
-                "Erro ao consultar o contato no Tiny.",
+            response.status_code,
 
-            "status":
-                response.status_code,
+            dados
+        )
 
-            "resposta_tiny":
-                dados
-        })
 
     contatos = dados.get(
         "itens",
@@ -172,18 +1099,16 @@ def buscar_contato(cpf_cnpj):
 
     if not contatos:
 
-        raise ValueError(
-            "Nenhum contato encontrado no Tiny para o CPF/CNPJ informado."
-        )
+        return None
 
-
-    # A API documenta cpfCnpj como parâmetro de pesquisa.
-    # Ainda validamos o documento retornado antes de usar o ID.
 
     for contato in contatos:
 
         documento_tiny = limpar_documento(
-            contato.get("cpfCnpj")
+
+            contato.get(
+                "cpfCnpj"
+            )
         )
 
 
@@ -192,56 +1117,49 @@ def buscar_contato(cpf_cnpj):
             return contato
 
 
-    raise ValueError(
-        "O Tiny retornou contatos, mas nenhum corresponde exatamente ao CPF/CNPJ informado."
-    )
+    if len(contatos) == 1:
+
+        return contatos[0]
+
+
+    return contatos[0]
 
 
 # ============================================================
-# BUSCAR PRODUTO PELO CÓDIGO
+# LOCALIZAR PRODUTO POR GTIN
 # ============================================================
 
-def buscar_produto(codigo):
+def localizar_produto_por_gtin(
+    gtin
+):
 
-    codigo = str(
-        codigo or ""
+    if not gtin:
+
+        return None
+
+
+    gtin = str(
+        gtin
     ).strip()
 
 
-    if not codigo:
+    response = tiny_request(
 
-        raise ValueError(
-            "Produto sem código."
-        )
+        "GET",
 
+        "/produtos",
 
-    url = (
-        f"{TINY_API_URL}/produtos"
-    )
+        params={
 
+            "gtin":
+                gtin,
 
-    params = {
+            "limit":
+                100,
 
-        "codigo":
-            codigo,
-
-        "limit":
-            100,
-
-        "offset":
-            0
-    }
-
-
-    response = requests.get(
-
-        url,
-
-        headers=tiny_headers(),
-
-        params=params,
-
-        timeout=30
+            "offset":
+                0
+        }
     )
 
 
@@ -250,19 +1168,24 @@ def buscar_produto(codigo):
     )
 
 
+    print(
+        "Consulta produto GTIN",
+        gtin,
+        "HTTP",
+        response.status_code
+    )
+
+
     if not response.ok:
 
-        raise RuntimeError({
+        raise TinyAPIError(
 
-            "mensagem":
-                f"Erro ao consultar o produto {codigo} no Tiny.",
+            "Erro ao consultar produto pelo GTIN.",
 
-            "status":
-                response.status_code,
+            response.status_code,
 
-            "resposta_tiny":
-                dados
-        })
+            dados
+        )
 
 
     produtos = dados.get(
@@ -273,33 +1196,44 @@ def buscar_produto(codigo):
 
     if not produtos:
 
-        raise ValueError(
+        return None
 
-            f'Nenhum produto encontrado no Tiny com o código "{codigo}".'
-
-        )
-
-
-    # Na resposta de produtos, o código aparece como SKU.
-    # Fazemos a comparação exata.
 
     for produto in produtos:
 
-        sku = str(
-            produto.get("sku", "")
-        ).strip()
+        gtins = [
+
+            produto.get(
+                "gtin"
+            ),
+
+            produto.get(
+                "gtinPrincipal"
+            )
+        ]
 
 
-        if sku == codigo:
+        for gtin_produto in gtins:
 
-            return produto
+            if (
+                gtin_produto
+                and
+                str(
+                    gtin_produto
+                ).strip()
+                ==
+                gtin
+            ):
+
+                return produto
 
 
-    raise ValueError(
+    if len(produtos) == 1:
 
-        f'O Tiny retornou produtos, mas nenhum possui o SKU "{codigo}".'
+        return produtos[0]
 
-    )
+
+    return None
 
 
 # ============================================================
@@ -314,31 +1248,20 @@ def testar_tiny():
 
     try:
 
-        if not TINY_TOKEN:
+        response = tiny_request(
 
-            return jsonify({
+            "GET",
 
-                "conectado":
-                    False,
-
-                "erro":
-                    "TINY_TOKEN não está configurado na Vercel."
-
-            }), 500
-
-
-        response = requests.get(
-
-            f"{TINY_API_URL}/contatos",
-
-            headers=tiny_headers(),
+            "/contatos",
 
             params={
-                "limit": 1,
-                "offset": 0
-            },
 
-            timeout=30
+                "limit":
+                    1,
+
+                "offset":
+                    0
+            }
         )
 
 
@@ -347,40 +1270,54 @@ def testar_tiny():
         )
 
 
+        if not response.ok:
+
+            return jsonify({
+
+                "erro":
+                    "Token rejeitado pelo Tiny.",
+
+                "status_tiny":
+                    response.status_code,
+
+                "resposta_tiny":
+                    dados
+
+            }), response.status_code
+
+
         return jsonify({
 
-            "conectado":
-                response.ok,
+            "sucesso":
+                True,
 
-            "status_tiny":
-                response.status_code,
+            "mensagem":
+                "Autenticação com a API V3 funcionando.",
 
-            "resposta_tiny":
+            "tiny":
                 dados
 
-        }), response.status_code
+        }), 200
 
 
-    except Exception as erro:
-
-        print(
-            traceback.format_exc()
-        )
-
+    except TinyAPIError as e:
 
         return jsonify({
 
-            "conectado":
-                False,
-
             "erro":
-                str(erro)
+                e.mensagem,
 
-        }), 500
+            "status_tiny":
+                e.status,
+
+            "detalhes":
+                e.resposta
+
+        }), e.status or 500
 
 
 # ============================================================
-# GERAR PROPOSTA
+# CRIAR PROPOSTA COMERCIAL
 # ============================================================
 
 @app.route(
@@ -391,13 +1328,9 @@ def gerar_proposta():
 
     try:
 
-        # ====================================================
-        # RECEBER JSON
-        # ====================================================
-
         dados_front = request.get_json(
-                silent=True
-            )
+            silent=True
+        )
 
 
         if not dados_front:
@@ -405,7 +1338,7 @@ def gerar_proposta():
             return jsonify({
 
                 "erro":
-                    "O backend não recebeu um JSON válido."
+                    "JSON inválido ou vazio."
 
             }), 400
 
@@ -420,15 +1353,8 @@ def gerar_proposta():
         )
 
 
-        nome_cliente = (
-            cliente.get("nome")
-            or ""
-        )
-
-
-        cpf_cnpj = (
-            cliente.get("cpf_cnpj")
-            or ""
+        cpf_cnpj = cliente.get(
+            "cpf_cnpj"
         )
 
 
@@ -437,18 +1363,35 @@ def gerar_proposta():
             return jsonify({
 
                 "erro":
-                    "CPF/CNPJ do cliente não foi informado."
+                    "CPF/CNPJ do cliente não informado."
 
             }), 400
 
 
-        # ====================================================
-        # LOCALIZAR CONTATO NO TINY
-        # ====================================================
-
-        contato = buscar_contato(
+        contato = localizar_contato(
             cpf_cnpj
         )
+
+
+        if not contato:
+
+            return jsonify({
+
+                "erro":
+                    "Cliente não encontrado no Tiny.",
+
+                "cpf_cnpj":
+                    limpar_documento(
+                        cpf_cnpj
+                    ),
+
+                "orientacao":
+                    (
+                        "Cadastre o cliente no Tiny "
+                        "antes de gerar a proposta."
+                    )
+
+            }), 404
 
 
         contato_id = contato.get(
@@ -461,7 +1404,10 @@ def gerar_proposta():
             return jsonify({
 
                 "erro":
-                    "O contato foi encontrado, mas o Tiny não retornou o ID."
+                    "Contato encontrado sem ID.",
+
+                "contato":
+                    contato
 
             }), 502
 
@@ -476,15 +1422,12 @@ def gerar_proposta():
         )
 
 
-        if not isinstance(
-            carrinho,
-            list
-        ) or not carrinho:
+        if not carrinho:
 
             return jsonify({
 
                 "erro":
-                    "O carrinho está vazio."
+                    "Carrinho vazio."
 
             }), 400
 
@@ -496,106 +1439,71 @@ def gerar_proposta():
         # PRODUTOS
         # ====================================================
 
-        for numero, item in enumerate(
+        for indice, item in enumerate(
             carrinho,
             start=1
         ):
 
-            codigo = (
-                item.get("codigo")
-                or ""
-            )
+            gtin = (
 
-
-            descricao = (
-                item.get("descricao")
-                or ""
-            )
-
-
-            if not codigo:
-
-                return jsonify({
-
-                    "erro":
-                        f"O item {numero} não possui código."
-
-                }), 400
-
-
-            # -----------------------------------------------
-            # QUANTIDADE
-            # -----------------------------------------------
-
-            try:
-
-                quantidade = float(
-                    item.get(
-                        "quantidade",
-                        1
-                    )
+                item.get(
+                    "gtin"
                 )
 
-            except Exception:
+                or
 
-                return jsonify({
-
-                    "erro":
-                        f'Quantidade inválida para "{descricao}".'
-
-                }), 400
-
-
-            if quantidade <= 0:
-
-                return jsonify({
-
-                    "erro":
-                        f'A quantidade de "{descricao}" deve ser maior que zero.'
-
-                }), 400
-
-
-            # -----------------------------------------------
-            # PREÇO
-            # -----------------------------------------------
-
-            try:
-
-                preco = float(
-                    item.get(
-                        "preco_unitario",
-                        0
-                    )
+                item.get(
+                    "ean"
                 )
-
-            except Exception:
-
-                return jsonify({
-
-                    "erro":
-                        f'Preço inválido para "{descricao}".'
-
-                }), 400
-
-
-            if preco < 0:
-
-                return jsonify({
-
-                    "erro":
-                        f'O preço de "{descricao}" não pode ser negativo.'
-
-                }), 400
-
-
-            # -----------------------------------------------
-            # BUSCAR PRODUTO NO TINY
-            # -----------------------------------------------
-
-            produto = buscar_produto(
-                codigo
             )
+
+
+            if not gtin:
+
+                return jsonify({
+
+                    "erro":
+                        "Produto sem GTIN.",
+
+                    "item":
+                        indice,
+
+                    "produto":
+                        item
+
+                }), 400
+
+
+            produto = localizar_produto_por_gtin(
+                gtin
+            )
+
+
+            if not produto:
+
+                return jsonify({
+
+                    "erro":
+                        "Produto não encontrado no Tiny pelo GTIN.",
+
+                    "item":
+                        indice,
+
+                    "gtin":
+                        gtin,
+
+                    "nome_site":
+                        (
+                            item.get(
+                                "nome"
+                            )
+                            or
+                            item.get(
+                                "descricao"
+                            )
+                        )
+
+                }), 404
 
 
             produto_id = produto.get(
@@ -608,18 +1516,34 @@ def gerar_proposta():
                 return jsonify({
 
                     "erro":
-                        f'O produto "{codigo}" foi encontrado no Tiny, mas não possui ID.'
+                        "Produto encontrado sem ID no Tiny.",
+
+                    "produto":
+                        produto
 
                 }), 502
 
 
-            # -----------------------------------------------
-            # ITEM NO FORMATO DA API V3
-            # -----------------------------------------------
+            quantidade = float(
+                item.get(
+                    "quantidade",
+                    1
+                )
+            )
+
+
+            preco = float(
+                item.get(
+                    "preco_unitario",
+                    0
+                )
+            )
+
 
             item_tiny = {
 
                 "produto": {
+
                     "id":
                         produto_id
                 },
@@ -628,11 +1552,26 @@ def gerar_proposta():
                     quantidade,
 
                 "valorUnitario":
-                    f"{preco:.2f}"
+                    preco
             }
 
 
-            # Descrição complementar é suportada pela API.
+            # Mantém a descrição do site como
+            # informação complementar.
+
+            descricao = (
+
+                item.get(
+                    "descricao"
+                )
+
+                or
+
+                item.get(
+                    "nome"
+                )
+            )
+
 
             if descricao:
 
@@ -647,17 +1586,7 @@ def gerar_proposta():
 
 
         # ====================================================
-        # ENDEREÇO
-        # ====================================================
-
-        endereco = dados_front.get(
-            "endereco",
-            {}
-        )
-
-
-        # ====================================================
-        # PAYLOAD TINY
+        # PAYLOAD V3
         # ====================================================
 
         payload_tiny = {
@@ -668,267 +1597,282 @@ def gerar_proposta():
                     contato_id
             },
 
-            "data":
-                datetime.now().strftime(
-                    "%Y-%m-%d"
-                ),
+            "itens":
+                itens_tiny,
 
             "observacao":
-                dados_front.get(
-                    "observacoes",
-                    ""
+                (
+                    dados_front.get(
+                        "observacoes"
+                    )
+                    or
+                    "Somos um E-COMMERCE, "
+                    "não reservamos estoque antes "
+                    "da aprovação do pagamento."
                 ),
 
             "condicoesComerciais": {
 
                 "textoLivre":
-                    dados_front.get(
-                        "condicoes_pagamento",
-                        ""
+                    (
+                        dados_front.get(
+                            "condicoes_pagamento"
+                        )
+                        or
+                        "Pagamento à vista ou via "
+                        "cartão de crédito."
                     )
-            },
-
-            "itens":
-                itens_tiny
+            }
         }
 
 
-        # ====================================================
-        # ENDEREÇO ALTERNATIVO
-        # ====================================================
-
-        tem_endereco = any([
-
-            endereco.get("logradouro"),
-
-            endereco.get("numero"),
-
-            endereco.get("bairro"),
-
-            endereco.get("cidade"),
-
-            endereco.get("cep"),
-
-            endereco.get("uf")
-        ])
-
-
-        if tem_endereco:
-
-            payload_tiny[
-                "enderecoAlternativo"
-            ] = {
-
-                "endereco":
-                    endereco.get(
-                        "logradouro",
-                        ""
-                    ),
-
-                "enderecoNro":
-                    endereco.get(
-                        "numero",
-                        ""
-                    ),
-
-                "bairro":
-                    endereco.get(
-                        "bairro",
-                        ""
-                    ),
-
-                "municipio":
-                    endereco.get(
-                        "cidade",
-                        ""
-                    ),
-
-                "cep":
-                    endereco.get(
-                        "cep",
-                        ""
-                    ),
-
-                "uf":
-                    endereco.get(
-                        "uf",
-                        ""
-                    ),
-
-                "fone":
-                    dados_front.get(
-                        "telefone",
-                        ""
-                    ),
-
-                "nomeDestinatario":
-                    nome_cliente,
-
-                "cpfCnpj":
-                    cpf_cnpj
-            }
-
-
-        # ====================================================
-        # LOG
-        # ====================================================
-
+        print("")
         print(
-            "PAYLOAD TINY:"
+            "========================================"
         )
 
         print(
-            payload_tiny
+            "CRIANDO PROPOSTA NO TINY"
+        )
+
+        print(
+            json.dumps(
+                payload_tiny,
+                indent=2,
+                ensure_ascii=False
+            )
+        )
+
+        print(
+            "========================================"
         )
 
 
         # ====================================================
-        # CRIAR ORÇAMENTO
+        # POST
         # ====================================================
 
-        response = requests.post(
+        response_post = tiny_request(
 
-            f"{TINY_API_URL}/orcamentos",
+            "POST",
 
-            headers=tiny_headers(),
+            "/orcamentos",
 
-            json=payload_tiny,
-
-            timeout=30
+            json=payload_tiny
         )
 
 
-        dados_tiny = resposta_json(
-            response
+        dados_criacao = resposta_json(
+            response_post
         )
 
 
         print(
-            "STATUS TINY:",
-            response.status_code
+            "POST /orcamentos:",
+            response_post.status_code
         )
 
 
-        print(
-            "RESPOSTA TINY:",
-            dados_tiny
-        )
-
-
-        # ====================================================
-        # ERRO
-        # ====================================================
-
-        if not response.ok:
+        if not response_post.ok:
 
             return jsonify({
 
                 "erro":
-                    "O Tiny recusou a criação da proposta.",
+                    "Tiny recusou a criação da proposta.",
 
                 "status_tiny":
-                    response.status_code,
+                    response_post.status_code,
 
                 "resposta_tiny":
-                    dados_tiny
+                    dados_criacao
 
-            }), response.status_code
+            }), response_post.status_code
 
 
         # ====================================================
-        # SUCESSO
+        # ID
         # ====================================================
 
-        return jsonify(
-            dados_tiny
-        ), 200
-
-
-    except ValueError as erro:
-
-        return jsonify({
-
-            "erro":
-                str(erro)
-
-        }), 400
-
-
-    except RuntimeError as erro:
-
-        detalhe = (
-            erro.args[0]
-            if erro.args
-            else str(erro)
-        )
+        orcamento_id = None
 
 
         if isinstance(
-            detalhe,
+            dados_criacao,
             dict
         ):
+
+            orcamento_id = (
+
+                dados_criacao.get(
+                    "id"
+                )
+
+                or
+
+                dados_criacao.get(
+                    "idOrcamento"
+                )
+            )
+
+
+        if not orcamento_id:
 
             return jsonify({
 
                 "erro":
-                    detalhe.get(
-                        "mensagem",
-                        "Erro ao consultar o Tiny."
-                    ),
-
-                "status_tiny":
-                    detalhe.get(
-                        "status"
+                    (
+                        "Tiny respondeu sucesso, "
+                        "mas não retornou o ID da proposta."
                     ),
 
                 "resposta_tiny":
-                    detalhe.get(
-                        "resposta_tiny"
-                    )
+                    dados_criacao
 
             }), 502
 
 
-        return jsonify({
+        # ====================================================
+        # GET
+        # ====================================================
 
-            "erro":
-                str(detalhe)
+        response_get = tiny_request(
 
-        }), 502
+            "GET",
+
+            f"/orcamentos/{orcamento_id}"
+        )
 
 
-    except requests.RequestException as erro:
+        dados_orcamento = resposta_json(
+            response_get
+        )
+
 
         print(
-            traceback.format_exc()
+            "GET /orcamentos/",
+            orcamento_id,
+            ":",
+            response_get.status_code
+        )
+
+
+        if response_get.ok:
+
+            return jsonify({
+
+                "sucesso":
+                    True,
+
+                "id":
+                    orcamento_id,
+
+                "criacao":
+                    dados_criacao,
+
+                "orcamento":
+                    dados_orcamento
+
+            }), 200
+
+
+        # POST funcionou, mas GET falhou.
+
+        return jsonify({
+
+            "sucesso":
+                True,
+
+            "id":
+                orcamento_id,
+
+            "criacao":
+                dados_criacao,
+
+            "erro_get":
+                True,
+
+            "status_get_tiny":
+                response_get.status_code,
+
+            "resposta_get_tiny":
+                dados_orcamento
+
+        }), 200
+
+
+    except TinyAPIError as e:
+
+        print("")
+        print(
+            "========================================"
+        )
+
+        print(
+            "ERRO TINY"
+        )
+
+        print(
+            "MENSAGEM:",
+            e.mensagem
+        )
+
+        print(
+            "STATUS:",
+            e.status
+        )
+
+        print(
+            "RESPOSTA:",
+            e.resposta
+        )
+
+        print(
+            "========================================"
         )
 
 
         return jsonify({
 
             "erro":
-                "Falha de comunicação com o Tiny.",
+                e.mensagem,
+
+            "status_tiny":
+                e.status,
+
+            "resposta_tiny":
+                e.resposta
+
+        }), e.status or 502
+
+
+    except requests.RequestException as e:
+
+        return jsonify({
+
+            "erro":
+                "Erro de comunicação com o Tiny.",
 
             "detalhes":
-                str(erro)
+                str(e)
 
         }), 502
 
 
-    except Exception as erro:
+    except Exception as e:
 
         print(
-            traceback.format_exc()
+            "ERRO INTERNO:",
+            str(e)
         )
 
 
         return jsonify({
 
             "erro":
-                "Erro interno ao gerar a proposta.",
+                "Erro interno no servidor.",
 
             "detalhes":
-                str(erro)
+                str(e)
 
         }), 500
 
@@ -941,34 +1885,22 @@ def gerar_proposta():
     "/api/obter-proposta/<int:id_proposta>",
     methods=["GET"]
 )
-def obter_proposta(id_proposta):
+def obter_proposta(
+    id_proposta
+):
 
     try:
 
-        response = requests.get(
+        response = tiny_request(
 
-            f"{TINY_API_URL}/orcamentos/{id_proposta}",
+            "GET",
 
-            headers=tiny_headers(),
-
-            timeout=30
+            f"/orcamentos/{id_proposta}"
         )
 
 
-        dados_tiny = resposta_json(
+        dados = resposta_json(
             response
-        )
-
-
-        print(
-            "GET ORÇAMENTO:",
-            id_proposta
-        )
-
-
-        print(
-            "STATUS TINY:",
-            response.status_code
         )
 
 
@@ -977,81 +1909,209 @@ def obter_proposta(id_proposta):
             return jsonify({
 
                 "erro":
-                    "Não foi possível obter o orçamento no Tiny.",
+                    "Falha ao obter o orçamento.",
 
                 "status_tiny":
                     response.status_code,
 
                 "resposta_tiny":
-                    dados_tiny
+                    dados
 
             }), response.status_code
 
 
         return jsonify(
-            dados_tiny
+            dados
         ), 200
 
 
-    except requests.RequestException as erro:
+    except TinyAPIError as e:
 
         return jsonify({
 
             "erro":
-                "Falha de comunicação com o Tiny.",
+                e.mensagem,
 
-            "detalhes":
-                str(erro)
+            "status_tiny":
+                e.status,
 
-        }), 502
+            "resposta_tiny":
+                e.resposta
+
+        }), e.status or 502
 
 
-    except Exception as erro:
-
-        print(
-            traceback.format_exc()
-        )
-
+    except Exception as e:
 
         return jsonify({
 
             "erro":
-                "Erro interno ao consultar o orçamento.",
+                "Erro interno.",
 
             "detalhes":
-                str(erro)
+                str(e)
 
         }), 500
 
 
 # ============================================================
-# ROTA INICIAL
+# STATUS
+# ============================================================
+
+@app.route(
+    "/api/status",
+    methods=["GET"]
+)
+def status():
+
+    try:
+
+        tokens = carregar_tokens()
+
+
+        if not tokens:
+
+            return jsonify({
+
+                "autorizado":
+                    False,
+
+                "mensagem":
+                    "Aplicação ainda não autorizada.",
+
+                "autorizar":
+                    "/api/oauth/autorizar"
+
+            }), 200
+
+
+        expires_at = int(
+            tokens.get(
+                "expires_at",
+                0
+            )
+        )
+
+
+        agora = int(
+            time.time()
+        )
+
+
+        return jsonify({
+
+            "autorizado":
+                True,
+
+            "access_token_valido":
+                agora < expires_at,
+
+            "tokens_armazenados":
+                True,
+
+            "mensagem":
+                "Credenciais OAuth encontradas no Redis."
+
+        }), 200
+
+
+    except Exception as e:
+
+        return jsonify({
+
+            "erro":
+                str(e)
+
+        }), 500
+
+
+# ============================================================
+# REVOGAR TOKEN LOCAL
+# ============================================================
+
+@app.route(
+    "/api/oauth/revogar",
+    methods=["POST"]
+)
+def revogar_oauth():
+
+    try:
+
+        redis_delete(
+            TINY_TOKEN_KEY
+        )
+
+
+        return jsonify({
+
+            "sucesso":
+                True,
+
+            "mensagem":
+                "Tokens removidos do Upstash Redis."
+
+        }), 200
+
+
+    except Exception as e:
+
+        return jsonify({
+
+            "erro":
+                "Não foi possível remover os tokens.",
+
+            "detalhes":
+                str(e)
+
+        }), 500
+
+
+# ============================================================
+# HOME
 # ============================================================
 
 @app.route(
     "/",
     methods=["GET"]
 )
-def home():
+def index():
 
     return jsonify({
 
         "status":
-            "ok",
+            "online",
 
         "servico":
-            "Backend integração Tray -> Olist ERP",
+            "Gerador de Propostas Comerciais",
 
-        "rotas": [
+        "api":
+            "Olist ERP API V3",
 
-            "/api/testar-tiny",
+        "endpoints": {
 
-            "/api/gerar-proposta",
+            "autorizar":
+                "/api/oauth/autorizar",
 
-            "/api/obter-proposta/<id>"
-        ]
+            "callback":
+                "/api/oauth/callback",
 
-    })
+            "status":
+                "/api/status",
+
+            "testar":
+                "/api/testar-tiny",
+
+            "gerar":
+                "/api/gerar-proposta",
+
+            "obter":
+                "/api/obter-proposta/<id>",
+
+            "revogar":
+                "/api/oauth/revogar"
+        }
+
+    }), 200
 
 
 # ============================================================
