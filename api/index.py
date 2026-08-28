@@ -1998,14 +1998,15 @@ def gerar_proposta():
 
             "condicoesComerciais": {
 
+                "tipo": "textoLivre",
+
                 "textoLivre":
                     (
                         dados_front.get(
                             "condicoes_pagamento"
                         )
                         or
-                        "Pagamento à vista ou via "
-                        "cartão de crédito."
+                        "Pagamento à vista ou via cartão de crédito."
                     )
             }
         }
