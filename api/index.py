@@ -1033,96 +1033,251 @@ def limpar_documento(
 # ============================================================
 
 def localizar_contato(
-    cpf_cnpj
+    cpf_cnpj,
+    nome=None,
+    busca_exaustiva=False
 ):
+    """
+    Localiza um contato pelo CPF/CNPJ.
 
-    documento = limpar_documento(
-        cpf_cnpj
-    )
+    Estratégia:
+    1. Usa o filtro oficial cpfCnpj da API V3.
+    2. Tenta novamente considerando as situações B/A/I/E.
+    3. Se ainda não encontrar e busca_exaustiva=True, percorre a
+       paginação de /contatos e compara o CPF/CNPJ localmente.
 
+    A busca exaustiva é importante para o cenário em que o Tiny
+    informa "Contato com CNPJ/CPF já existe", mas o filtro direto
+    não devolve o registro esperado.
+    """
+
+    documento = limpar_documento(cpf_cnpj)
 
     if not documento:
-
         raise TinyAPIError(
             "CPF/CNPJ do cliente não informado."
         )
 
+    # --------------------------------------------------------
+    # 1) FILTRO DIRETO POR CPF/CNPJ
+    # --------------------------------------------------------
 
-    response = tiny_request(
+    situacoes = [None, "B", "A", "I", "E"]
+    vistos = set()
 
-        "GET",
+    for situacao in situacoes:
 
-        "/contatos",
-
-        params={
-
-            "cpfCnpj":
-                documento,
-
-            "limit":
-                100,
-
-            "offset":
-                0
+        params = {
+            "cpfCnpj": documento,
+            "limit": 100,
+            "offset": 0
         }
-    )
 
+        if situacao:
+            params["situacao"] = situacao
 
-    dados = resposta_json(
-        response
-    )
-
-
-    print(
-        "Consulta contato:",
-        response.status_code
-    )
-
-
-    if not response.ok:
-
-        raise TinyAPIError(
-
-            "Erro ao consultar contato no Tiny.",
-
-            response.status_code,
-
-            dados
+        response = tiny_request(
+            "GET",
+            "/contatos",
+            params=params
         )
 
+        dados = resposta_json(response)
 
-    contatos = dados.get(
-        "itens",
-        []
-    )
+        print(
+            "Consulta contato por CPF/CNPJ:",
+            documento,
+            "situação:",
+            situacao or "todas",
+            "HTTP:",
+            response.status_code
+        )
 
+        if not response.ok:
+            # Se uma situação específica não for aceita pela conta,
+            # tentamos as demais. Para a consulta sem situação,
+            # entretanto, o erro é relevante e deve ser informado.
+            if situacao:
+                continue
 
-    if not contatos:
-
-        return None
-
-
-    for contato in contatos:
-
-        documento_tiny = limpar_documento(
-
-            contato.get(
-                "cpfCnpj"
+            raise TinyAPIError(
+                "Erro ao consultar contato no Tiny.",
+                response.status_code,
+                dados
             )
+
+        contatos = dados.get(
+            "itens",
+            []
         )
 
+        if not isinstance(contatos, list):
+            contatos = []
 
-        if documento_tiny == documento:
+        for contato in contatos:
 
-            return contato
+            contato_id = contato.get("id")
 
+            if contato_id in vistos:
+                continue
 
-    if len(contatos) == 1:
+            vistos.add(contato_id)
 
-        return contatos[0]
+            documento_tiny = limpar_documento(
+                contato.get("cpfCnpj")
+            )
 
+            if documento_tiny == documento:
+                return contato
 
-    return contatos[0]
+    # --------------------------------------------------------
+    # 2) FALLBACK POR NOME
+    # --------------------------------------------------------
+    # O filtro por nome é oficialmente suportado pela API V3.
+    # Ainda assim, o contato só é aceito se o CPF/CNPJ também
+    # conferir exatamente.
+
+    if nome:
+
+        response = tiny_request(
+            "GET",
+            "/contatos",
+            params={
+                "nome": nome,
+                "limit": 100,
+                "offset": 0
+            }
+        )
+
+        dados = resposta_json(response)
+
+        print(
+            "Fallback consulta contato por nome:",
+            nome,
+            "HTTP:",
+            response.status_code
+        )
+
+        if response.ok:
+
+            contatos = dados.get(
+                "itens",
+                []
+            )
+
+            if isinstance(contatos, list):
+
+                for contato in contatos:
+
+                    documento_tiny = limpar_documento(
+                        contato.get("cpfCnpj")
+                    )
+
+                    if documento_tiny == documento:
+                        return contato
+
+    # --------------------------------------------------------
+    # 3) BUSCA EXAUSTIVA PAGINADA
+    # --------------------------------------------------------
+    # Esta é a parte importante para o erro atual.
+    #
+    # O Tiny documenta cpfCnpj como filtro, porém, se o filtro não
+    # retornar um cadastro que sabemos que existe, percorremos a
+    # listagem e fazemos a comparação localmente.
+    #
+    # Isso só é executado quando explicitamente solicitado para
+    # evitar uma varredura completa de contatos em toda requisição.
+
+    if busca_exaustiva:
+
+        limit = 100
+        offset = 0
+        total = None
+        max_paginas = 1000
+
+        for _ in range(max_paginas):
+
+            response = tiny_request(
+                "GET",
+                "/contatos",
+                params={
+                    "limit": limit,
+                    "offset": offset
+                }
+            )
+
+            dados = resposta_json(response)
+
+            print(
+                "Busca exaustiva de contato:",
+                "offset=",
+                offset,
+                "HTTP=",
+                response.status_code
+            )
+
+            if not response.ok:
+
+                raise TinyAPIError(
+                    "Erro ao percorrer contatos do Tiny para localizar o CPF/CNPJ.",
+                    response.status_code,
+                    dados
+                )
+
+            contatos = dados.get(
+                "itens",
+                []
+            )
+
+            if not isinstance(contatos, list):
+                contatos = []
+
+            for contato in contatos:
+
+                documento_tiny = limpar_documento(
+                    contato.get("cpfCnpj")
+                )
+
+                if documento_tiny == documento:
+
+                    print(
+                        "Contato localizado na busca exaustiva. ID:",
+                        contato.get("id")
+                    )
+
+                    return contato
+
+            paginacao = dados.get(
+                "paginacao",
+                {}
+            )
+
+            if isinstance(paginacao, dict):
+
+                try:
+                    total = int(
+                        paginacao.get("total")
+                    )
+                except (TypeError, ValueError):
+                    total = None
+
+            # Se não há itens, não há mais o que procurar.
+            if not contatos:
+                break
+
+            offset += len(contatos)
+
+            # Se o Tiny informou o total, paramos exatamente quando
+            # ultrapassarmos a quantidade existente.
+            if total is not None and offset >= total:
+                break
+
+            # Proteção contra API que devolva repetidamente a mesma
+            # página sem atualizar a paginação.
+            if len(contatos) < limit and total is None:
+                break
+
+    return None
 
 
 # ============================================================
@@ -1225,6 +1380,67 @@ def criar_contato(dados_front):
     )
 
     if not response.ok:
+
+        # O Tiny pode retornar HTTP 400 informando que o CPF/CNPJ
+        # já existe. Isso significa que a consulta anterior não
+        # conseguiu localizar o registro, mas o cadastro existe.
+        # Nesse caso, fazemos uma nova busca antes de desistir.
+        texto_erro = json.dumps(
+            dados,
+            ensure_ascii=False
+        ).lower()
+
+        documento_duplicado = (
+            response.status_code == 400
+            and (
+                "já existe" in texto_erro
+                or "ja existe" in texto_erro
+                or "already exists" in texto_erro
+            )
+            and (
+                "cnpj" in texto_erro
+                or "cpf" in texto_erro
+            )
+        )
+
+        if documento_duplicado:
+
+            print(
+                "Tiny informou que o CPF/CNPJ já existe. "
+                "Tentando localizar o contato existente..."
+            )
+
+            contato_existente = localizar_contato(
+                documento,
+                nome,
+                busca_exaustiva=True
+            )
+
+            if contato_existente:
+
+                contato_id = contato_existente.get(
+                    "id"
+                )
+
+                if contato_id:
+                    print(
+                        "Contato existente recuperado após "
+                        "erro de duplicidade. ID:",
+                        contato_id
+                    )
+
+                    return {
+                        "id": contato_id,
+                        "nome": contato_existente.get(
+                            "nome",
+                            nome
+                        ),
+                        "cpfCnpj": documento,
+                        "criado_agora": False,
+                        "resposta": contato_existente,
+                        "recuperado_apos_duplicidade": True
+                    }
+
         raise TinyAPIError(
             "Tiny recusou a criação do contato.",
             response.status_code,
@@ -1276,8 +1492,16 @@ def obter_ou_criar_contato(dados_front):
             400
         )
 
+    nome = (
+        cliente.get("nome")
+        or cliente.get("razao_social")
+        or None
+    )
+
     contato = localizar_contato(
-        documento
+        documento,
+        nome,
+        busca_exaustiva=True
     )
 
     if contato:
@@ -1324,9 +1548,10 @@ def localizar_produto_por_gtin(
         return None
 
 
-    gtin = str(
-        gtin
-    ).strip()
+    gtin = "".join(
+        c for c in str(gtin)
+        if c.isdigit()
+    )
 
 
     response = tiny_request(
@@ -1401,14 +1626,15 @@ def localizar_produto_por_gtin(
 
         for gtin_produto in gtins:
 
+            gtin_produto_normalizado = "".join(
+                c for c in str(gtin_produto)
+                if c.isdigit()
+            ) if gtin_produto else ""
+
             if (
-                gtin_produto
+                gtin_produto_normalizado
                 and
-                str(
-                    gtin_produto
-                ).strip()
-                ==
-                gtin
+                gtin_produto_normalizado == gtin
             ):
 
                 return produto
@@ -1769,19 +1995,6 @@ def gerar_proposta():
                     "não reservamos estoque antes "
                     "da aprovação do pagamento."
                 ),
-
-            "condicoesComerciais": {
-
-                "textoLivre":
-                    (
-                        dados_front.get(
-                            "condicoes_pagamento"
-                        )
-                        or
-                        "Pagamento à vista ou via "
-                        "cartão de crédito."
-                    )
-            }
         }
 
 
@@ -2281,16 +2494,3 @@ def index():
         }
 
     }), 200
-
-
-# ============================================================
-# EXECUÇÃO LOCAL
-# ============================================================
-
-if __name__ == "__main__":
-
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        debug=True
-    )
