@@ -1124,6 +1124,118 @@ def localizar_contato(
 
     return contatos[0]
 
+def localizar_ou_criar_contato(cpf_cnpj, cliente, dados_front):
+
+    documento = limpar_documento(cpf_cnpj)
+
+    if not documento:
+        raise TinyAPIError(
+            "CPF/CNPJ do cliente não informado."
+        )
+
+    # 1. TENTA ENCONTRAR
+    contato = localizar_contato(documento)
+
+    if contato:
+        print(
+            "Contato já existente no Tiny. ID:",
+            contato.get("id")
+        )
+        return contato
+
+    # 2. NÃO ENCONTROU → CRIA
+    endereco = dados_front.get("endereco", {})
+
+    payload_contato = {
+        "nome": cliente.get("nome"),
+        "cpfCnpj": documento,
+        "email": dados_front.get("email"),
+        "telefone": dados_front.get("telefone"),
+        "endereco": {
+            "cep": endereco.get("cep"),
+            "logradouro": endereco.get("logradouro"),
+            "numero": endereco.get("numero"),
+            "bairro": endereco.get("bairro"),
+            "municipio": endereco.get("cidade"),
+            "uf": endereco.get("uf")
+        }
+    }
+
+    print("")
+    print("========================================")
+    print("CRIANDO CONTATO NO TINY")
+    print(json.dumps(
+        payload_contato,
+        indent=2,
+        ensure_ascii=False
+    ))
+    print("========================================")
+
+    response = tiny_request(
+        "POST",
+        "/contatos",
+        json=payload_contato
+    )
+
+    dados = resposta_json(response)
+
+    print(
+        "POST /contatos:",
+        response.status_code
+    )
+
+    if response.ok:
+
+        contato_id = (
+            dados.get("id")
+            or
+            dados.get("data", {}).get("id")
+        )
+
+        if not contato_id:
+            raise TinyAPIError(
+                "Tiny criou o contato, mas não retornou o ID.",
+                response.status_code,
+                dados
+            )
+
+        return {
+            "id": contato_id,
+            "cpfCnpj": documento,
+            "nome": cliente.get("nome"),
+            "criado_agora": True
+        }
+
+    # 3. CASO O TINY DIGA QUE JÁ EXISTE,
+    #    TENTA LOCALIZAR NOVAMENTE
+    texto_erro = json.dumps(
+        dados,
+        ensure_ascii=False
+    ).lower()
+
+    if (
+        "já existe" in texto_erro
+        or
+        "ja existe" in texto_erro
+        or
+        "duplic" in texto_erro
+    ):
+
+        print(
+            "Tiny informou que o contato já existe."
+        )
+
+        contato = localizar_contato(documento)
+
+        if contato:
+            return contato
+
+    raise TinyAPIError(
+        "Erro ao criar contato no Tiny.",
+        response.status_code,
+        dados
+    )
+
 
 # ============================================================
 # NORMALIZAR SKU / CÓDIGO
@@ -1371,11 +1483,11 @@ def gerar_proposta():
             }), 400
 
 
-        contato = localizar_contato(
-            cpf_cnpj
+        contato = localizar_ou_criar_contato(
+            cpf_cnpj,
+            cliente,
+            dados_front
         )
-
-
         if not contato:
 
             return jsonify({
