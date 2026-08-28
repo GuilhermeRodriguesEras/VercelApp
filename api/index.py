@@ -1598,21 +1598,21 @@ def localizar_produto_por_sku(
     sku_normalizado = sku.casefold()
 
     for produto in produtos:
-        codigo_produto = produto.get(
-            "codigo"
+        sku_produto = produto.get(
+            "sku"
         )
 
-        if codigo_produto is None:
+        if sku_produto is None:
             continue
 
-        codigo_normalizado = str(
-            codigo_produto
+        sku_produto_normalizado = str(
+            sku_produto
         ).strip().casefold()
 
         if (
-            codigo_normalizado
+            sku_produto_normalizado
             and
-            codigo_normalizado == sku_normalizado
+            sku_produto_normalizado == sku_normalizado
         ):
             return produto
 
