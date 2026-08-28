@@ -1995,20 +1995,6 @@ def gerar_proposta():
                     "não reservamos estoque antes "
                     "da aprovação do pagamento."
                 ),
-
-            "condicoesComerciais": {
-
-                "tipo": "textoLivre",
-
-                "textoLivre":
-                    (
-                        dados_front.get(
-                            "condicoes_pagamento"
-                        )
-                        or
-                        "Pagamento à vista ou via cartão de crédito."
-                    )
-            }
         }
 
 
