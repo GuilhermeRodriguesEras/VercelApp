@@ -10,11 +10,6 @@ import secrets
 import time
 from urllib.parse import urlencode
 
-
-# ============================================================
-# FLASK
-# ============================================================
-
 app = Flask(__name__)
 
 CORS(
@@ -25,11 +20,6 @@ CORS(
         }
     }
 )
-
-
-# ============================================================
-# TINY / OLIST API V3
-# ============================================================
 
 TINY_API_URL = "https://api.tiny.com.br/public-api/v3"
 
@@ -42,11 +32,6 @@ TINY_TOKEN_URL = (
     "https://accounts.tiny.com.br/"
     "realms/tiny/protocol/openid-connect/token"
 )
-
-
-# ============================================================
-# VARIÁVEIS DE AMBIENTE
-# ============================================================
 
 TINY_CLIENT_ID = os.environ.get(
     "TINY_CLIENT_ID"
@@ -61,13 +46,6 @@ TINY_REDIRECT_URI = os.environ.get(
 )
 
 
-# ============================================================
-# UPSTASH REDIS
-#
-# Quando o Upstash é conectado à Vercel, normalmente essas
-# variáveis são disponibilizadas automaticamente.
-# ============================================================
-
 REDIS_URL = (
     os.environ.get("UPSTASH_REDIS_REST_URL")
     or
@@ -80,22 +58,12 @@ REDIS_TOKEN = (
     os.environ.get("KV_REST_API_TOKEN")
 )
 
-
-# ============================================================
-# CHAVES REDIS
-# ============================================================
-
 TINY_TOKEN_KEY = "tiny:oauth:tokens"
 
 OAUTH_STATE_KEY = "tiny:oauth:state"
 TINY_REFRESH_LOCK_KEY = "tiny:oauth:refresh-lock"
 TINY_REFRESH_LOCK_TTL = 60
 TINY_REFRESH_WAIT_SECONDS = 12
-
-
-# ============================================================
-# ERRO PERSONALIZADO
-# ============================================================
 
 class TinyAPIError(Exception):
 
@@ -111,11 +79,6 @@ class TinyAPIError(Exception):
         self.mensagem = mensagem
         self.status = status
         self.resposta = resposta
-
-
-# ============================================================
-# REDIS
-# ============================================================
 
 def redis_disponivel():
 
@@ -213,11 +176,6 @@ def redis_delete(chave):
         chave
     )
 
-
-# ============================================================
-# TOKENS
-# ============================================================
-
 def carregar_tokens():
 
     valor = redis_get(
@@ -295,11 +253,6 @@ def salvar_tokens(
         "Tokens OAuth salvos no Upstash Redis."
     )
 
-
-# ============================================================
-# HEADERS TINY
-# ============================================================
-
 def headers_tiny(
     access_token
 ):
@@ -316,11 +269,6 @@ def headers_tiny(
             "application/json"
     }
 
-
-# ============================================================
-# CONVERTER RESPOSTA
-# ============================================================
-
 def resposta_json(
     response
 ):
@@ -332,12 +280,7 @@ def resposta_json(
     except Exception:
 
         return response.text
-
-
-# ============================================================
-# OAUTH - AUTORIZAR
-# ============================================================
-
+    
 @app.route(
     "/api/oauth/autorizar",
     methods=["GET"]
@@ -389,17 +332,10 @@ def oauth_autorizar():
 
         }), 500
 
-
-    # ========================================================
-    # STATE DE SEGURANÇA
-    # ========================================================
-
     state = secrets.token_urlsafe(
         32
     )
 
-
-    # Estado válido por 10 minutos.
 
     redis_set(
         OAUTH_STATE_KEY,
@@ -439,11 +375,6 @@ def oauth_autorizar():
     return redirect(
         url
     )
-
-
-# ============================================================
-# OAUTH - CALLBACK
-# ============================================================
 
 @app.route(
     "/api/oauth/callback",
@@ -501,11 +432,6 @@ def oauth_callback():
 
         }), 400
 
-
-    # ========================================================
-    # VALIDAR STATE
-    # ========================================================
-
     state_salvo = redis_get(
         OAUTH_STATE_KEY
     )
@@ -536,17 +462,9 @@ def oauth_callback():
 
         }), 400
 
-
-    # Impede reutilização.
-
     redis_delete(
         OAUTH_STATE_KEY
     )
-
-
-    # ========================================================
-    # TROCAR CODE POR TOKENS
-    # ========================================================
 
     try:
 
@@ -656,12 +574,7 @@ def oauth_callback():
                     dados
 
             }), 502
-
-
-        # ====================================================
-        # SALVAR NO UPSTASH
-        # ====================================================
-
+        
         salvar_tokens(
 
             access_token,
@@ -708,30 +621,9 @@ def oauth_callback():
 
         }), 502
 
-
-# ============================================================
-# RENOVAR ACCESS TOKEN
-# ============================================================
-
 def renovar_access_token(
     tokens
 ):
-    """
-    Renova o access token com proteção contra concorrência.
-
-    A aplicação roda na Vercel e pode receber duas requisições
-    simultâneas quando o access token expira. Se ambas tentarem usar
-    o mesmo refresh token ao mesmo tempo, o provedor OAuth pode
-    invalidar o refresh token usado pela segunda requisição.
-
-    Por isso:
-    1. adquirimos um lock distribuído no Upstash;
-    2. depois de adquirir o lock, recarregamos os tokens do Redis;
-    3. se outra execução já renovou os tokens, reutilizamos os novos;
-    4. somente uma execução chama o endpoint OAuth de refresh;
-    5. se o Tiny devolver invalid_grant/Token is not active,
-       informamos que é necessária uma nova autorização.
-    """
 
     tokens = tokens or {}
 
@@ -748,10 +640,7 @@ def renovar_access_token(
                     "/api/oauth/autorizar"
             }
         )
-
-    # ========================================================
-    # LOCK DISTRIBUÍDO NO UPSTASH
-    # ========================================================
+    
     lock_token = secrets.token_urlsafe(32)
     lock_adquirido = False
 
@@ -777,8 +666,6 @@ def renovar_access_token(
 
                 break
 
-            # Outra execução está renovando. Esperamos um pouco e
-            # verificamos se ela já atualizou os tokens.
             time.sleep(0.5)
 
             tokens_atualizados = carregar_tokens()
@@ -823,9 +710,6 @@ def renovar_access_token(
                         )
                 }
 
-        # Se não conseguimos o lock, fazemos uma última leitura antes
-        # de desistir. Isso evita erro quando a outra execução acabou
-        # de concluir a renovação.
         if not lock_adquirido:
             tokens_atualizados = carregar_tokens()
 
@@ -872,12 +756,6 @@ def renovar_access_token(
                 }
             )
 
-        # ========================================================
-        # RECARREGAR TOKENS DEPOIS DO LOCK
-        # ========================================================
-        # O objeto recebido pelo chamador pode estar desatualizado.
-        # Por isso sempre consultamos o Redis novamente depois de
-        # adquirir o lock.
         tokens_atuais = carregar_tokens() or {}
 
         access_atual = tokens_atuais.get(
@@ -895,8 +773,6 @@ def renovar_access_token(
             "refresh_token"
         )
 
-        # Se outra execução já renovou os tokens antes de adquirirmos
-        # o lock, não consumimos novamente o refresh token.
         if (
             access_atual
             and
@@ -933,9 +809,6 @@ def renovar_access_token(
                 }
             )
 
-        # ========================================================
-        # REFRESH NO TINY
-        # ========================================================
         response = requests.post(
             TINY_TOKEN_URL,
             data={
@@ -984,10 +857,6 @@ def renovar_access_token(
             )
 
             if invalid_grant:
-                # O refresh token não pode mais ser utilizado. Removê-lo
-                # evita que todas as próximas requisições repitam o mesmo
-                # refresh inválido. A aplicação deverá ser autorizada
-                # novamente pelo endpoint /api/oauth/autorizar.
                 try:
                     redis_delete(
                         TINY_TOKEN_KEY
@@ -1020,10 +889,6 @@ def renovar_access_token(
         novo_access_token = dados.get(
             "access_token"
         )
-
-        # Se o Tiny rotacionar o refresh token, o novo valor substitui
-        # imediatamente o anterior. Se não enviar um novo refresh token,
-        # mantemos o atual.
         novo_refresh_token = (
             dados.get(
                 "refresh_token"
@@ -1043,10 +908,6 @@ def renovar_access_token(
                 502,
                 dados
             )
-
-        # ========================================================
-        # SALVAR NOVOS TOKENS
-        # ========================================================
         salvar_tokens(
             novo_access_token,
             novo_refresh_token,
@@ -1075,8 +936,6 @@ def renovar_access_token(
         )
 
     finally:
-        # O TTL evita que o lock fique preso em caso de falha. Aqui
-        # removemos o lock ao finalizar normalmente.
         if lock_adquirido:
             try:
                 redis_delete(
@@ -1092,10 +951,6 @@ def renovar_access_token(
                     "Aviso: não foi possível liberar o lock OAuth:",
                     str(e)
                 )
-
-# ============================================================
-# OBTER ACCESS TOKEN VÁLIDO
-# ============================================================
 
 def obter_access_token():
 
@@ -1157,11 +1012,6 @@ def obter_access_token():
         "access_token"
     ]
 
-
-# ============================================================
-# REQUEST AUTENTICADO AO TINY
-# ============================================================
-
 def tiny_request(
     metodo,
     endpoint,
@@ -1185,11 +1035,6 @@ def tiny_request(
 
         **kwargs
     )
-
-
-    # ========================================================
-    # 401 → TOKEN PODE TER EXPIRADO
-    # ========================================================
 
     if response.status_code == 401:
 
@@ -1245,11 +1090,6 @@ def tiny_request(
 
     return response
 
-
-# ============================================================
-# LIMPAR CPF/CNPJ
-# ============================================================
-
 def limpar_documento(
     valor
 ):
@@ -1271,28 +1111,11 @@ def limpar_documento(
     )
 
 
-# ============================================================
-# LOCALIZAR CONTATO
-# ============================================================
-
 def localizar_contato(
     cpf_cnpj,
     nome=None,
     busca_exaustiva=False
 ):
-    """
-    Localiza um contato pelo CPF/CNPJ.
-
-    Estratégia:
-    1. Usa o filtro oficial cpfCnpj da API V3.
-    2. Tenta novamente considerando as situações B/A/I/E.
-    3. Se ainda não encontrar e busca_exaustiva=True, percorre a
-       paginação de /contatos e compara o CPF/CNPJ localmente.
-
-    A busca exaustiva é importante para o cenário em que o Tiny
-    informa "Contato com CNPJ/CPF já existe", mas o filtro direto
-    não devolve o registro esperado.
-    """
 
     documento = limpar_documento(cpf_cnpj)
 
@@ -1300,10 +1123,6 @@ def localizar_contato(
         raise TinyAPIError(
             "CPF/CNPJ do cliente não informado."
         )
-
-    # --------------------------------------------------------
-    # 1) FILTRO DIRETO POR CPF/CNPJ
-    # --------------------------------------------------------
 
     situacoes = [None, "B", "A", "I", "E"]
     vistos = set()
@@ -1337,9 +1156,6 @@ def localizar_contato(
         )
 
         if not response.ok:
-            # Se uma situação específica não for aceita pela conta,
-            # tentamos as demais. Para a consulta sem situação,
-            # entretanto, o erro é relevante e deve ser informado.
             if situacao:
                 continue
 
@@ -1372,13 +1188,6 @@ def localizar_contato(
 
             if documento_tiny == documento:
                 return contato
-
-    # --------------------------------------------------------
-    # 2) FALLBACK POR NOME
-    # --------------------------------------------------------
-    # O filtro por nome é oficialmente suportado pela API V3.
-    # Ainda assim, o contato só é aceito se o CPF/CNPJ também
-    # conferir exatamente.
 
     if nome:
 
@@ -1418,18 +1227,6 @@ def localizar_contato(
 
                     if documento_tiny == documento:
                         return contato
-
-    # --------------------------------------------------------
-    # 3) BUSCA EXAUSTIVA PAGINADA
-    # --------------------------------------------------------
-    # Esta é a parte importante para o erro atual.
-    #
-    # O Tiny documenta cpfCnpj como filtro, porém, se o filtro não
-    # retornar um cadastro que sabemos que existe, percorremos a
-    # listagem e fazemos a comparação localmente.
-    #
-    # Isso só é executado quando explicitamente solicitado para
-    # evitar uma varredura completa de contatos em toda requisição.
 
     if busca_exaustiva:
 
@@ -1504,28 +1301,18 @@ def localizar_contato(
                 except (TypeError, ValueError):
                     total = None
 
-            # Se não há itens, não há mais o que procurar.
             if not contatos:
                 break
 
             offset += len(contatos)
 
-            # Se o Tiny informou o total, paramos exatamente quando
-            # ultrapassarmos a quantidade existente.
             if total is not None and offset >= total:
                 break
 
-            # Proteção contra API que devolva repetidamente a mesma
-            # página sem atualizar a paginação.
             if len(contatos) < limit and total is None:
                 break
 
     return None
-
-
-# ============================================================
-# CRIAR CONTATO
-# ============================================================
 
 def criar_contato(dados_front):
 
@@ -1559,9 +1346,6 @@ def criar_contato(dados_front):
             "Nome do cliente não informado."
         )
 
-    # O código é usado para identificar o contato no Tiny.
-    # Como o CPF/CNPJ é único, ele evita criar códigos
-    # aleatórios e facilita futuras consultas.
     codigo = f"WEB-{documento}"
 
     endereco_tiny = {
@@ -1581,8 +1365,6 @@ def criar_contato(dados_front):
         if valor not in [None, ""]
     }
 
-    # A API V3 permite criar o contato com os dados do formulário.
-    # Não criamos usuário na Tray; este é somente um contato no Tiny.
     payload = {
         "nome": nome,
         "codigo": codigo,
@@ -1624,10 +1406,6 @@ def criar_contato(dados_front):
 
     if not response.ok:
 
-        # O Tiny pode retornar HTTP 400 informando que o CPF/CNPJ
-        # já existe. Isso significa que a consulta anterior não
-        # conseguiu localizar o registro, mas o cadastro existe.
-        # Nesse caso, fazemos uma nova busca antes de desistir.
         texto_erro = json.dumps(
             dados,
             ensure_ascii=False
@@ -1713,11 +1491,6 @@ def criar_contato(dados_front):
         "resposta": dados
     }
 
-
-# ============================================================
-# OBTER OU CRIAR CONTATO
-# ============================================================
-
 def obter_ou_criar_contato(dados_front):
 
     cliente = dados_front.get(
@@ -1777,11 +1550,6 @@ def obter_ou_criar_contato(dados_front):
         dados_front
     )
 
-
-# ============================================================
-# LOCALIZAR PRODUTO POR SKU
-# ============================================================
-
 def localizar_produto_por_sku(
     sku
 ):
@@ -1789,8 +1557,6 @@ def localizar_produto_por_sku(
     if not sku:
         return None
 
-    # SKU é um código e pode conter letras, números, hífens etc.
-    # Portanto, não fazemos a normalização numérica usada no GTIN.
     sku = str(sku).strip()
 
     if not sku:
@@ -1834,10 +1600,7 @@ def localizar_produto_por_sku(
 
     if not produtos:
         return None
-
-    # Não usamos o primeiro resultado como fallback.
-    # O código/SKU precisa corresponder exatamente ao SKU recebido
-    # para evitar associar um produto incorreto ao orçamento.
+    
     sku_normalizado = sku.casefold()
 
     for produto in produtos:
@@ -1860,11 +1623,6 @@ def localizar_produto_por_sku(
             return produto
 
     return None
-
-
-# ============================================================
-# TESTAR TINY
-# ============================================================
 
 @app.route(
     "/api/testar-tiny",
@@ -1941,11 +1699,6 @@ def testar_tiny():
 
         }), e.status or 500
 
-
-# ============================================================
-# CRIAR PROPOSTA COMERCIAL
-# ============================================================
-
 @app.route(
     "/api/gerar-proposta",
     methods=["POST"]
@@ -1967,11 +1720,6 @@ def gerar_proposta():
                     "JSON inválido ou vazio."
 
             }), 400
-
-
-        # ====================================================
-        # CLIENTE
-        # ====================================================
 
         cliente = dados_front.get(
             "cliente",
@@ -2012,11 +1760,6 @@ def gerar_proposta():
                 contato
             )
 
-
-        # ====================================================
-        # CARRINHO
-        # ====================================================
-
         carrinho = dados_front.get(
             "carrinho",
             []
@@ -2034,11 +1777,6 @@ def gerar_proposta():
 
 
         itens_tiny = []
-
-
-        # ====================================================
-        # PRODUTOS
-        # ====================================================
 
         for indice, item in enumerate(
             carrinho,
@@ -2174,17 +1912,6 @@ def gerar_proposta():
                 item_tiny
             )
 
-        # ============================================================
-        # INTRODUÇÃO, OBSERVAÇÃO E DATAS DA PROPOSTA
-        # ============================================================
-        # A introdução aparece no início da Proposta Comercial.
-        #
-        # Os valores abaixo são calculados no frontend usando exatamente
-        # a mesma lógica exibida no carrinho e enviados para cá para que
-        # o backend seja a única camada responsável pela montagem do
-        # payload do Tiny.
-        # ============================================================
-
         introducao_proposta = (
             dados_front.get("introducao")
             or
@@ -2219,9 +1946,6 @@ def gerar_proposta():
         def dinheiro(valor):
             return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-        # A API do Olist documenta explicitamente os campos "data" e
-        # "dataProximoContato" no POST de orçamentos. Usamos o fuso de
-        # São Paulo para que a virada do dia não dependa do UTC da Vercel.
         hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
         data_proximo_contato = hoje + timedelta(days=3)
 
@@ -2290,13 +2014,9 @@ def gerar_proposta():
             "dataProximoContato":
                 data_proximo_contato,
 
-            # Mantido como já estava: informações adicionais em
-            # "Outros itens ou serviços".
             "outrosItensServicos":
                 outros_itens_servicos,
 
-            # A observação continua recebendo a observação padrão
-            # e agora também os custos/valores das parcelas.
             "observacao":
                 observacao_pagamento,
         }
@@ -2438,9 +2158,6 @@ def gerar_proposta():
                     dados_orcamento
 
             }), 200
-
-
-        # POST funcionou, mas GET falhou.
 
         return jsonify({
 
