@@ -286,11 +286,9 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         "Agência: 8811\n"
         "Conta Corrente: 99874-2\n\n"
         "Se preferir, o pagamento pode ser realizado via PIX, a chave "
-        "é o nosso CNPJ"
+        "é o nosso CNPJ \n"
     )
 
-    # Mantém exatamente as quebras de linha recebidas, sem criar indentação.
-    # Também corrige entidades como &agrave; / &atilde; antes de renderizar.
     for bloco in str(unescape(texto(introducao))).split("\n\n"):
         linhas = str(bloco).split("\n")
         html_bloco = "<br/>".join(escape_html(linha) for linha in linhas)
@@ -451,11 +449,12 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         valor_avista = total_carrinho * 0.98
 
     pagamentos_html = (
-        "Condições de pagamento do carrinho<br/>"
-        f"Total do carrinho: R$ {numero_pt(total_carrinho)}<br/>"
+        "<h1>Condições de pagamento:</h1><br/>"
+        f"<h2>Total do carrinho: <b> R$ {numero_pt(total_carrinho)} </b></h2><br/>"
         f"Pagamento à vista com desconto: R$ {numero_pt(valor_avista)}<br/>"
         f"3x de R$ {numero_pt(valor_3x)} sem juros<br/>"
-        f"12x de R$ {numero_pt(valor_12x)} com juros no cartão."
+        f"12x de R$ {numero_pt(valor_12x)} com juros no cartão. <br/><br/>"
+        "Frete a combinar. Entre em contato com nosso time de vendas para obter uma cotação"
     )
     observacoes_html = escape_html(observacoes).replace("\n", "<br/>")
 
