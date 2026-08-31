@@ -2481,3 +2481,40 @@ def index():
         }
 
     }), 200
+
+@app.route(
+    "/api/imprimir-proposta/<int:id_proposta>",
+    methods=["POST"]
+)
+def imprimir_proposta(id_proposta):
+    try:
+        response = tiny_request(
+            "POST",
+            f"/orcamentos/{id_proposta}/imprimir"
+        )
+        
+        dados = resposta_json(response)
+        
+        print(f"POST /orcamentos/{id_proposta}/imprimir:", response.status_code)
+
+        if not response.ok:
+            return jsonify({
+                "erro": "Falha ao gerar o PDF da proposta.",
+                "status_tiny": response.status_code,
+                "resposta_tiny": dados
+            }), response.status_code
+
+        return jsonify(dados), 200
+
+    except TinyAPIError as e:
+        return jsonify({
+            "erro": e.mensagem,
+            "status_tiny": e.status,
+            "resposta_tiny": e.resposta
+        }), e.status or 502
+
+    except Exception as e:
+        return jsonify({
+            "erro": "Erro interno ao tentar imprimir.",
+            "detalhes": str(e)
+        }), 500
