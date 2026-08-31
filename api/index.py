@@ -2172,6 +2172,63 @@ def gerar_proposta():
                 item_tiny
             )
 
+        # ============================================================
+        # INTRODUÇÃO E OUTROS ITENS / SERVIÇOS
+        # ============================================================
+        # A introdução aparece no início da Proposta Comercial.
+        #
+        # Os valores abaixo são calculados no frontend usando exatamente
+        # a mesma lógica exibida no carrinho e enviados para cá para que
+        # o backend seja a única camada responsável pela montagem do
+        # payload do Tiny.
+        # ============================================================
+
+        introducao_proposta = (
+            dados_front.get("introducao")
+            or
+            "Prezado cliente, seguem abaixo proposta comercial com "
+            "pagamento à vista com desconto e nossos dados bancários:\n\n"
+            "Favorecido: Segue nossos dados bancários:\n"
+            "Favorecido: *BRFER Comércio de Ferramentas LTDA*\n"
+            "CNPJ 40.954.410/0001-96\n"
+            "Banco: 341 – Itaú\n"
+            "Agência: 8811\n"
+            "Conta Corrente: 99874-2\n\n"
+            "Se preferir, o pagamento pode ser realizado via PIX, a chave "
+            "é o nosso CNPJ"
+        )
+
+        resumo_carrinho = dados_front.get(
+            "resumo_carrinho",
+            {}
+        )
+
+        def valor_float(nome):
+            try:
+                return float(resumo_carrinho.get(nome, 0) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        total_carrinho = valor_float("total")
+        valor_avista = valor_float("avista")
+        valor_parcela_3x = valor_float("parcela_3x")
+        valor_parcela_12x = valor_float("parcela_12x")
+
+        def dinheiro(valor):
+            return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        outros_itens_servicos = (
+            dados_front.get("outros_itens_servicos")
+            or
+            (
+                "Condições de pagamento do carrinho\n"
+                f"Total do carrinho: {dinheiro(total_carrinho)}\n"
+                f"Pagamento à vista com desconto: {dinheiro(valor_avista)}\n"
+                f"3x de {dinheiro(valor_parcela_3x)} sem juros\n"
+                f"12x de {dinheiro(valor_parcela_12x)} com juros no cartão."
+            )
+        )
+
         payload_tiny = {
 
             "contato": {
@@ -2183,6 +2240,16 @@ def gerar_proposta():
             "itens":
                 itens_tiny,
 
+            # Campo da seção Introdução da Proposta Comercial.
+            "introducao":
+                introducao_proposta,
+
+            # Campo utilizado pela tela de Proposta Comercial para
+            # informações adicionais em "Outros itens ou serviços".
+            "outrosItensServicos":
+                outros_itens_servicos,
+
+            # Mantemos a observação existente do sistema.
             "observacao":
                 (
                     dados_front.get(
