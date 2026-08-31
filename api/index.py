@@ -2190,8 +2190,8 @@ def gerar_proposta():
             or
             "Prezado cliente, seguem abaixo proposta comercial com "
             "pagamento à vista com desconto e nossos dados bancários:\n\n"
-            "Favorecido: Segue nossos dados bancários:\n"
-            "Favorecido: *BRFER Comércio de Ferramentas LTDA*\n"
+            "Segue nossos dados bancários:\n"
+            "BRFER Comércio de Ferramentas LTDA\n"
             "CNPJ 40.954.410/0001-96\n"
             "Banco: 341 – Itaú\n"
             "Agência: 8811\n"
@@ -2234,8 +2234,8 @@ def gerar_proposta():
             )
             or
             (
-                "Condições de pagamento do carrinho\n"
-                f"Total do carrinho: {dinheiro(total_carrinho)}\n"
+                "Condições de pagamento\n"
+                f"Total: {dinheiro(total_carrinho)}\n"
                 f"Pagamento à vista com desconto: {dinheiro(valor_avista)}\n"
                 f"3x de {dinheiro(valor_parcela_3x)} sem juros\n"
                 f"12x de {dinheiro(valor_parcela_12x)} com juros no cartão."
