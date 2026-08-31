@@ -4,6 +4,8 @@ from flask_cors import CORS
 import requests
 import os
 import json
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import secrets
 import time
 from urllib.parse import urlencode
@@ -2173,7 +2175,7 @@ def gerar_proposta():
             )
 
         # ============================================================
-        # INTRODUÇÃO E OUTROS ITENS / SERVIÇOS
+        # INTRODUÇÃO, OBSERVAÇÃO E DATAS DA PROPOSTA
         # ============================================================
         # A introdução aparece no início da Proposta Comercial.
         #
@@ -2217,8 +2219,19 @@ def gerar_proposta():
         def dinheiro(valor):
             return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+        # A API do Olist documenta explicitamente os campos "data" e
+        # "dataProximoContato" no POST de orçamentos. Usamos o fuso de
+        # São Paulo para que a virada do dia não dependa do UTC da Vercel.
+        hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+        data_proximo_contato = hoje + timedelta(days=3)
+
+        data_proposta = hoje.isoformat()
+        data_proximo_contato_str = data_proximo_contato.isoformat()
+
         outros_itens_servicos = (
-            dados_front.get("outros_itens_servicos")
+            dados_front.get(
+                "outros_itens_servicos"
+            )
             or
             (
                 "Condições de pagamento do carrinho\n"
@@ -2227,6 +2240,34 @@ def gerar_proposta():
                 f"3x de {dinheiro(valor_parcela_3x)} sem juros\n"
                 f"12x de {dinheiro(valor_parcela_12x)} com juros no cartão."
             )
+        )
+
+        hoje = datetime.now(
+            ZoneInfo("America/Sao_Paulo")
+        ).date()
+
+        data_proposta = hoje.isoformat()
+
+        data_proximo_contato = (
+            hoje + timedelta(days=3)
+        ).isoformat()
+
+        observacao_padrao = (
+            dados_front.get(
+                "observacoes"
+            )
+            or
+            "Somos um E-COMMERCE, não reservamos estoque "
+            "antes da aprovação do pagamento."
+        )
+
+        observacao_pagamento = (
+            f"{observacao_padrao}\n\n"
+            "Condições de pagamento do carrinho\n"
+            f"Total do carrinho: {dinheiro(total_carrinho)}\n"
+            f"Pagamento à vista com desconto: {dinheiro(valor_avista)}\n"
+            f"3x de {dinheiro(valor_parcela_3x)} sem juros\n"
+            f"12x de {dinheiro(valor_parcela_12x)} com juros no cartão."
         )
 
         payload_tiny = {
@@ -2240,26 +2281,24 @@ def gerar_proposta():
             "itens":
                 itens_tiny,
 
-            # Campo da seção Introdução da Proposta Comercial.
             "introducao":
                 introducao_proposta,
 
-            # Campo utilizado pela tela de Proposta Comercial para
-            # informações adicionais em "Outros itens ou serviços".
+            "data":
+                data_proposta,
+
+            "dataProximoContato":
+                data_proximo_contato,
+
+            # Mantido como já estava: informações adicionais em
+            # "Outros itens ou serviços".
             "outrosItensServicos":
                 outros_itens_servicos,
 
-            # Mantemos a observação existente do sistema.
+            # A observação continua recebendo a observação padrão
+            # e agora também os custos/valores das parcelas.
             "observacao":
-                (
-                    dados_front.get(
-                        "observacoes"
-                    )
-                    or
-                    "Somos um E-COMMERCE, "
-                    "não reservamos estoque antes "
-                    "da aprovação do pagamento."
-                ),
+                observacao_pagamento,
         }
 
 
