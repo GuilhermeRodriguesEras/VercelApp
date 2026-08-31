@@ -12,6 +12,7 @@ from urllib.parse import urlencode
 
 import base64
 from io import BytesIO
+from html import unescape
 
 from flask import send_file
 
@@ -30,7 +31,7 @@ BRFER_LOGO_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAJUAAABwCAIAAACYSaUpAAAACXBIWXMAAA7
 
 
 def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
-    """Gera localmente uma proposta comercial em PDF seguindo o layout do Tiny."""
+    """Gera o PDF local com dimensões e espaçamentos próximos ao PDF do Tiny."""
 
     cliente = dados_front.get("cliente") or {}
     endereco = dados_front.get("endereco") or {}
@@ -54,8 +55,12 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         return str(valor or "").strip()
 
     def escape_html(valor):
+        # O Tiny pode devolver alguns textos já HTML-encodados (&atilde;, &agrave; etc.).
+        # Primeiro decodificamos entidades existentes e depois escapamos somente
+        # os caracteres necessários para o Paragraph do ReportLab.
+        valor = unescape(texto(valor))
         return (
-            texto(valor)
+            valor
             .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
@@ -81,9 +86,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
                 linha += f", {bairro}"
             partes.append(linha)
 
-        cidade_linha = ""
-        if cidade:
-            cidade_linha = cidade
+        cidade_linha = cidade
         if cep:
             cidade_linha += f" - {cep}" if cidade_linha else cep
         if uf:
@@ -94,13 +97,20 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         return partes
 
     styles = getSampleStyleSheet()
+
+    # Helvetica é mantida para não exigir arquivos .ttf no deploy da Vercel.
+    # O problema dos acentos não era a fonte: eram entidades HTML chegando ao PDF.
     normal = ParagraphStyle(
         "PropostaNormal",
         parent=styles["Normal"],
         fontName="Helvetica",
         fontSize=8.8,
-        leading=10.6,
+        leading=10.2,
+        spaceBefore=0,
         spaceAfter=0,
+        leftIndent=0,
+        rightIndent=0,
+        firstLineIndent=0,
         textColor=colors.black,
     )
     title_style = ParagraphStyle(
@@ -123,7 +133,10 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         "PropostaTableLeft",
         parent=normal,
         fontSize=8.1,
-        leading=9.2,
+        leading=9.0,
+        leftIndent=0,
+        rightIndent=0,
+        firstLineIndent=0,
     )
     table_center = ParagraphStyle(
         "PropostaTableCenter",
@@ -144,11 +157,15 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
     )
 
     buffer = BytesIO()
+
+    # O Tiny utiliza praticamente toda a largura útil da página.
+    # 10 mm de margem deixa as caixas de endereço, itens, resumo e observações
+    # com a mesma largura visual do PDF original.
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=18 * mm,
-        leftMargin=18 * mm,
+        rightMargin=10 * mm,
+        leftMargin=10 * mm,
         topMargin=8 * mm,
         bottomMargin=18 * mm,
         title=f"Proposta Comercial {orcamento_id}",
@@ -174,7 +191,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
     header = Table(
         [[logo, Paragraph(empresa_html, empresa_style)]],
-        colWidths=[45 * mm, 134 * mm],
+        colWidths=[45 * mm, 145 * mm],
         rowHeights=[28 * mm],
     )
     header.setStyle(TableStyle([
@@ -196,38 +213,36 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         f"Proposta Comercial Nº {escape_html(numero_proposta)}",
         title_style,
     ))
-    story.append(Spacer(1, 6 * mm))
+    story.append(Spacer(1, 5 * mm))
 
     # ------------------- CLIENTE / ENDEREÇO ----------------------
     nome_cliente = texto(
         primeiro_valor(
             cliente.get("razao_social"),
             cliente.get("nome"),
+            contato.get("nome") if isinstance(contato, dict) else "",
             "Cliente",
         )
     )
-    documento = texto(cliente.get("cpf_cnpj"))
+    documento = texto(primeiro_valor(
+        cliente.get("cpf_cnpj"),
+        contato.get("cpfCnpj") if isinstance(contato, dict) else "",
+    ))
     endereco_linhas = endereco_formatado()
 
-    telefone = texto(
-        primeiro_valor(
-            contato.get("telefone"),
-            cliente.get("telefone"),
-        )
-    )
-    celular = texto(
-        primeiro_valor(
-            contato.get("celular"),
-            contato.get("telefoneCelular"),
-            cliente.get("celular"),
-        )
-    )
-    email = texto(
-        primeiro_valor(
-            contato.get("email"),
-            cliente.get("email"),
-        )
-    )
+    telefone = texto(primeiro_valor(
+        contato.get("telefone") if isinstance(contato, dict) else "",
+        cliente.get("telefone"),
+    ))
+    celular = texto(primeiro_valor(
+        contato.get("celular") if isinstance(contato, dict) else "",
+        contato.get("telefoneCelular") if isinstance(contato, dict) else "",
+        cliente.get("celular"),
+    ))
+    email = texto(primeiro_valor(
+        contato.get("email") if isinstance(contato, dict) else "",
+        cliente.get("email"),
+    ))
 
     story.append(Paragraph("Para", normal))
     story.append(Paragraph(escape_html(nome_cliente), normal))
@@ -250,10 +265,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
     if contato_linha:
         dados_endereco.append([Paragraph(", ".join(contato_linha), normal)])
 
-    endereco_box = Table(
-        dados_endereco,
-        colWidths=[179 * mm],
-    )
+    endereco_box = Table(dados_endereco, colWidths=[190 * mm])
     endereco_box.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.75, colors.black),
         ("LEFTPADDING", (0, 0), (-1, -1), 4),
@@ -277,8 +289,9 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         "é o nosso CNPJ"
     )
 
-    # Mantém a quebra de parágrafo do Tiny, sem criar espaçamentos extras grandes.
-    for bloco in str(introducao).split("\n\n"):
+    # Mantém exatamente as quebras de linha recebidas, sem criar indentação.
+    # Também corrige entidades como &agrave; / &atilde; antes de renderizar.
+    for bloco in str(unescape(texto(introducao))).split("\n\n"):
         linhas = str(bloco).split("\n")
         html_bloco = "<br/>".join(escape_html(linha) for linha in linhas)
         story.append(Paragraph(html_bloco, normal))
@@ -316,14 +329,12 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
     for indice, item in enumerate(itens, start=1):
         produto = item.get("produto") or {}
-        descricao = texto(
-            primeiro_valor(
-                produto.get("descricao"),
-                item.get("descricao"),
-                item.get("nome"),
-                "Produto",
-            )
-        )
+        descricao = texto(primeiro_valor(
+            produto.get("descricao"),
+            item.get("descricao"),
+            item.get("nome"),
+            "Produto",
+        ))
         sku = texto(primeiro_valor(produto.get("sku"), item.get("sku")))
         quantidade = float_seguro(item.get("quantidade"), 1.0)
         valor_unitario = float_seguro(
@@ -336,10 +347,8 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
         complemento = texto(item.get("descrComplementarOrc"))
         descricao_html = f"<b>{escape_html(descricao)}</b>"
-        if complemento:
-            descricao_html += (
-                f"<br/><font color='#555555'>{escape_html(complemento)}</font>"
-            )
+        if complemento and unescape(complemento).strip() != unescape(descricao).strip():
+            descricao_html += f"<br/><font color='#555555'>{escape_html(complemento)}</font>"
 
         corpo_itens.append([
             Paragraph(str(indice), table_center),
@@ -351,19 +360,15 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
             Paragraph(numero_pt(total_item), table_right),
         ])
 
-    subtotal = float_seguro(
-        primeiro_valor(
-            dados_orcamento.get("valorSubtotal"),
-            dados_orcamento.get("valorTotal"),
-            total_itens_calculado,
-        )
-    )
-    total_proposta = float_seguro(
-        primeiro_valor(
-            dados_orcamento.get("valorTotal"),
-            subtotal,
-        )
-    )
+    subtotal = float_seguro(primeiro_valor(
+        dados_orcamento.get("valorSubtotal"),
+        dados_orcamento.get("valorTotal"),
+        total_itens_calculado,
+    ))
+    total_proposta = float_seguro(primeiro_valor(
+        dados_orcamento.get("valorTotal"),
+        subtotal,
+    ))
 
     corpo_itens.append([
         Paragraph(
@@ -376,14 +381,18 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         Paragraph(numero_pt(subtotal), table_right),
     ])
 
+    # 190 mm de largura, mesma largura das demais caixas.
+    # As proporções seguem visualmente o Tiny: descrição maior, SKU médio e
+    # colunas financeiras mais estreitas.
     tabela_itens = Table(
         corpo_itens,
-        colWidths=[8 * mm, 78 * mm, 27 * mm, 14 * mm, 12 * mm, 25 * mm, 25 * mm],
+        colWidths=[8 * mm, 86 * mm, 30 * mm, 13 * mm, 12 * mm, 20.5 * mm, 20.5 * mm],
         repeatRows=1,
         splitByRow=1,
     )
     tabela_itens.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -2), 0.6, colors.black),
+        # O Tiny apresenta a linha de resumo como parte da mesma grade.
+        ("GRID", (0, 0), (-1, -1), 0.6, colors.black),
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EDEDED")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 3),
@@ -391,13 +400,6 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         ("TOPPADDING", (0, 0), (-1, -1), 2.2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2.2),
         ("SPAN", (0, -1), (4, -1)),
-        ("LINEABOVE", (0, -1), (-1, -1), 0.6, colors.black),
-        ("LINEBELOW", (0, -1), (-1, -1), 0.6, colors.black),
-        ("LINELEFT", (0, -1), (0, -1), 0.6, colors.black),
-        ("LINERIGHT", (4, -1), (4, -1), 0.6, colors.black),
-        ("LINELEFT", (5, -1), (5, -1), 0.6, colors.black),
-        ("LINELEFT", (6, -1), (6, -1), 0.6, colors.black),
-        ("LINERIGHT", (6, -1), (6, -1), 0.6, colors.black),
         ("ALIGN", (5, -1), (6, -1), "RIGHT"),
     ]))
     story.append(tabela_itens)
@@ -423,9 +425,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
             Paragraph(numero_pt(subtotal), table_right),
             Paragraph(numero_pt(total_proposta), table_right),
         ],
-        ],
-        colWidths=[47 * mm, 66 * mm, 66 * mm]
-    )
+    ], colWidths=[47 * mm, 71.5 * mm, 71.5 * mm])
     resumo_data.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.6, colors.black),
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EDEDED")),
@@ -461,7 +461,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
     observacoes_box = Table(
         [[Paragraph(observacoes_html + "<br/><br/>" + pagamentos_html, normal)]],
-        colWidths=[179 * mm]
+        colWidths=[190 * mm],
     )
     observacoes_box.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 0.75, colors.black),
