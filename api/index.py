@@ -2261,22 +2261,14 @@ def gerar_proposta():
             "antes da aprovação do pagamento."
         )
 
-        # As condições de pagamento passam para o objeto
-        # "condicoesComerciais" da API do Olist/Tiny.
-        condicoes_comerciais = {
-            "parcelas": {
-                "condicao":
-                    "Condições de pagamento do carrinho",
-                "dias": [],
-                "obs": [
-                    f"Total do carrinho: {dinheiro(total_carrinho)}",
-                    f"Pagamento à vista com desconto: {dinheiro(valor_avista)}",
-                    f"3x de {dinheiro(valor_parcela_3x)} sem juros",
-                    f"12x de {dinheiro(valor_parcela_12x)} com juros no cartão."
-                ]
-            },
-            "textoLivre": ""
-        }
+        observacao_pagamento = (
+            f"{observacao_padrao}\n\n"
+            "Condições de pagamento do carrinho\n"
+            f"Total do carrinho: {dinheiro(total_carrinho)}\n"
+            f"Pagamento à vista com desconto: {dinheiro(valor_avista)}\n"
+            f"3x de {dinheiro(valor_parcela_3x)} sem juros\n"
+            f"12x de {dinheiro(valor_parcela_12x)} com juros no cartão."
+        )
 
         payload_tiny = {
 
@@ -2303,14 +2295,10 @@ def gerar_proposta():
             "outrosItensServicos":
                 outros_itens_servicos,
 
-            # Observação permanece somente com a observação padrão.
+            # A observação continua recebendo a observação padrão
+            # e agora também os custos/valores das parcelas.
             "observacao":
-                observacao_padrao,
-
-            # Condições de pagamento conforme a estrutura
-            # documentada pela API.
-            "condicoesComerciais":
-                condicoes_comerciais,
+                observacao_pagamento,
         }
 
 
