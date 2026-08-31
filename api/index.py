@@ -86,6 +86,9 @@ REDIS_TOKEN = (
 TINY_TOKEN_KEY = "tiny:oauth:tokens"
 
 OAUTH_STATE_KEY = "tiny:oauth:state"
+TINY_REFRESH_LOCK_KEY = "tiny:oauth:refresh-lock"
+TINY_REFRESH_LOCK_TTL = 60
+TINY_REFRESH_WAIT_SECONDS = 12
 
 
 # ============================================================
@@ -711,144 +714,382 @@ def oauth_callback():
 def renovar_access_token(
     tokens
 ):
+    """
+    Renova o access token com proteção contra concorrência.
+
+    A aplicação roda na Vercel e pode receber duas requisições
+    simultâneas quando o access token expira. Se ambas tentarem usar
+    o mesmo refresh token ao mesmo tempo, o provedor OAuth pode
+    invalidar o refresh token usado pela segunda requisição.
+
+    Por isso:
+    1. adquirimos um lock distribuído no Upstash;
+    2. depois de adquirir o lock, recarregamos os tokens do Redis;
+    3. se outra execução já renovou os tokens, reutilizamos os novos;
+    4. somente uma execução chama o endpoint OAuth de refresh;
+    5. se o Tiny devolver invalid_grant/Token is not active,
+       informamos que é necessária uma nova autorização.
+    """
+
+    tokens = tokens or {}
 
     refresh_token = tokens.get(
         "refresh_token"
     )
 
-
     if not refresh_token:
-
         raise TinyAPIError(
-            "Refresh token não encontrado."
+            "Refresh token não encontrado. Autorize novamente a aplicação no Tiny.",
+            401,
+            {
+                "autorizacao":
+                    "/api/oauth/autorizar"
+            }
         )
 
+    # ========================================================
+    # LOCK DISTRIBUÍDO NO UPSTASH
+    # ========================================================
+    lock_token = secrets.token_urlsafe(32)
+    lock_adquirido = False
 
     try:
+        for _ in range(
+            int(TINY_REFRESH_WAIT_SECONDS * 2)
+        ):
+            resultado_lock = redis_request(
+                "SET",
+                TINY_REFRESH_LOCK_KEY,
+                lock_token,
+                "NX",
+                "EX",
+                str(TINY_REFRESH_LOCK_TTL)
+            )
 
+            if resultado_lock == "OK":
+                lock_adquirido = True
+
+                print(
+                    "Lock de renovação OAuth adquirido."
+                )
+
+                break
+
+            # Outra execução está renovando. Esperamos um pouco e
+            # verificamos se ela já atualizou os tokens.
+            time.sleep(0.5)
+
+            tokens_atualizados = carregar_tokens()
+
+            if not tokens_atualizados:
+                continue
+
+            novo_access = tokens_atualizados.get(
+                "access_token"
+            )
+
+            novo_expires_at = int(
+                tokens_atualizados.get(
+                    "expires_at",
+                    0
+                )
+            )
+
+            if (
+                novo_access
+                and
+                novo_access != tokens.get("access_token")
+                and
+                int(time.time()) < novo_expires_at
+            ):
+                print(
+                    "Outra execução já renovou o OAuth. "
+                    "Reutilizando o novo access token."
+                )
+
+                return {
+                    "access_token":
+                        novo_access,
+                    "refresh_token":
+                        tokens_atualizados.get(
+                            "refresh_token"
+                        ),
+                    "expires_in":
+                        max(
+                            1,
+                            novo_expires_at - int(time.time())
+                        )
+                }
+
+        # Se não conseguimos o lock, fazemos uma última leitura antes
+        # de desistir. Isso evita erro quando a outra execução acabou
+        # de concluir a renovação.
+        if not lock_adquirido:
+            tokens_atualizados = carregar_tokens()
+
+            if tokens_atualizados:
+                novo_access = tokens_atualizados.get(
+                    "access_token"
+                )
+
+                novo_expires_at = int(
+                    tokens_atualizados.get(
+                        "expires_at",
+                        0
+                    )
+                )
+
+                if (
+                    novo_access
+                    and
+                    novo_access != tokens.get("access_token")
+                    and
+                    int(time.time()) < novo_expires_at
+                ):
+                    return {
+                        "access_token":
+                            novo_access,
+                        "refresh_token":
+                            tokens_atualizados.get(
+                                "refresh_token"
+                            ),
+                        "expires_in":
+                            max(
+                                1,
+                                novo_expires_at - int(time.time())
+                            )
+                    }
+
+            raise TinyAPIError(
+                "Outra requisição está renovando o acesso ao Tiny. "
+                "Tente novamente em alguns segundos.",
+                503,
+                {
+                    "motivo":
+                        "lock_de_renovacao_oauth"
+                }
+            )
+
+        # ========================================================
+        # RECARREGAR TOKENS DEPOIS DO LOCK
+        # ========================================================
+        # O objeto recebido pelo chamador pode estar desatualizado.
+        # Por isso sempre consultamos o Redis novamente depois de
+        # adquirir o lock.
+        tokens_atuais = carregar_tokens() or {}
+
+        access_atual = tokens_atuais.get(
+            "access_token"
+        )
+
+        expires_at_atual = int(
+            tokens_atuais.get(
+                "expires_at",
+                0
+            )
+        )
+
+        refresh_atual = tokens_atuais.get(
+            "refresh_token"
+        )
+
+        # Se outra execução já renovou os tokens antes de adquirirmos
+        # o lock, não consumimos novamente o refresh token.
+        if (
+            access_atual
+            and
+            int(time.time()) < expires_at_atual
+            and
+            access_atual != tokens.get("access_token")
+        ):
+            print(
+                "Tokens já foram renovados por outra execução. "
+                "Nenhum novo refresh será realizado."
+            )
+
+            return {
+                "access_token":
+                    access_atual,
+                "refresh_token":
+                    refresh_atual,
+                "expires_in":
+                    max(
+                        1,
+                        expires_at_atual - int(time.time())
+                    )
+            }
+
+        refresh_token = refresh_atual or refresh_token
+
+        if not refresh_token:
+            raise TinyAPIError(
+                "Refresh token não encontrado. Autorize novamente a aplicação no Tiny.",
+                401,
+                {
+                    "autorizacao":
+                        "/api/oauth/autorizar"
+                }
+            )
+
+        # ========================================================
+        # REFRESH NO TINY
+        # ========================================================
         response = requests.post(
-
             TINY_TOKEN_URL,
-
             data={
-
                 "grant_type":
                     "refresh_token",
-
                 "client_id":
                     TINY_CLIENT_ID,
-
                 "client_secret":
                     TINY_CLIENT_SECRET,
-
                 "refresh_token":
                     refresh_token
             },
-
             headers={
-
                 "Accept":
                     "application/json",
-
                 "Content-Type":
                     "application/x-www-form-urlencoded"
             },
-
             timeout=30
         )
-
 
         dados = resposta_json(
             response
         )
-
 
         print(
             "Renovação OAuth Tiny HTTP:",
             response.status_code
         )
 
-
         if not response.ok:
-
-            raise TinyAPIError(
-
-                "Não foi possível renovar o access token.",
-
-                response.status_code,
-
+            print(
+                "Resposta OAuth refresh:",
                 dados
             )
 
+            texto_erro = json.dumps(
+                dados,
+                ensure_ascii=False
+            ).lower()
+
+            invalid_grant = (
+                "invalid_grant" in texto_erro
+                or
+                "token is not active" in texto_erro
+            )
+
+            if invalid_grant:
+                # O refresh token não pode mais ser utilizado. Removê-lo
+                # evita que todas as próximas requisições repitam o mesmo
+                # refresh inválido. A aplicação deverá ser autorizada
+                # novamente pelo endpoint /api/oauth/autorizar.
+                try:
+                    redis_delete(
+                        TINY_TOKEN_KEY
+                    )
+                except Exception as e:
+                    print(
+                        "Aviso: não foi possível remover os tokens "
+                        "OAuth inválidos:",
+                        str(e)
+                    )
+
+                raise TinyAPIError(
+                    "O refresh token do Tiny não está mais ativo. "
+                    "É necessário autorizar novamente a aplicação no Tiny.",
+                    401,
+                    {
+                        "resposta_tiny":
+                            dados,
+                        "autorizacao":
+                            "/api/oauth/autorizar"
+                    }
+                )
+
+            raise TinyAPIError(
+                "Não foi possível renovar o access token.",
+                response.status_code,
+                dados
+            )
 
         novo_access_token = dados.get(
             "access_token"
         )
 
-
-        # Alguns fluxos retornam um novo refresh token.
-        # Se não retornar, mantemos o anterior.
-
+        # Se o Tiny rotacionar o refresh token, o novo valor substitui
+        # imediatamente o anterior. Se não enviar um novo refresh token,
+        # mantemos o atual.
         novo_refresh_token = (
-
             dados.get(
                 "refresh_token"
             )
-
             or
-
             refresh_token
         )
-
 
         expires_in = dados.get(
             "expires_in",
             3600
         )
 
-
         if not novo_access_token:
-
             raise TinyAPIError(
-                "Tiny não retornou novo access_token."
+                "Tiny não retornou novo access_token.",
+                502,
+                dados
             )
 
-
+        # ========================================================
+        # SALVAR NOVOS TOKENS
+        # ========================================================
         salvar_tokens(
-
             novo_access_token,
-
             novo_refresh_token,
-
             expires_in
         )
 
+        print(
+            "Renovação OAuth concluída e tokens atualizados no Redis."
+        )
 
         return {
-
             "access_token":
                 novo_access_token,
-
             "refresh_token":
                 novo_refresh_token,
-
             "expires_in":
                 expires_in
         }
 
-
     except requests.RequestException as e:
-
         raise TinyAPIError(
-
             "Erro de comunicação durante "
             "a renovação do token.",
-
             None,
-
             str(e)
         )
 
+    finally:
+        # O TTL evita que o lock fique preso em caso de falha. Aqui
+        # removemos o lock ao finalizar normalmente.
+        if lock_adquirido:
+            try:
+                redis_delete(
+                    TINY_REFRESH_LOCK_KEY
+                )
+
+                print(
+                    "Lock de renovação OAuth liberado."
+                )
+
+            except Exception as e:
+                print(
+                    "Aviso: não foi possível liberar o lock OAuth:",
+                    str(e)
+                )
 
 # ============================================================
 # OBTER ACCESS TOKEN VÁLIDO
@@ -1906,10 +2147,6 @@ def gerar_proposta():
                     preco
             }
 
-
-            # Mantém a descrição do site como
-            # informação complementar.
-
             descricao = (
 
                 item.get(
@@ -1934,11 +2171,6 @@ def gerar_proposta():
             itens_tiny.append(
                 item_tiny
             )
-
-
-        # ====================================================
-        # PAYLOAD V3
-        # ====================================================
 
         payload_tiny = {
 
@@ -1985,11 +2217,6 @@ def gerar_proposta():
             "========================================"
         )
 
-
-        # ====================================================
-        # POST
-        # ====================================================
-
         response_post = tiny_request(
 
             "POST",
@@ -2026,13 +2253,7 @@ def gerar_proposta():
 
             }), response_post.status_code
 
-
-        # ====================================================
-        # ID
-        # ====================================================
-
         orcamento_id = None
-
 
         if isinstance(
             dados_criacao,
@@ -2067,11 +2288,6 @@ def gerar_proposta():
                     dados_criacao
 
             }), 502
-
-
-        # ====================================================
-        # GET
-        # ====================================================
 
         response_get = tiny_request(
 
@@ -2224,11 +2440,6 @@ def gerar_proposta():
 
         }), 500
 
-
-# ============================================================
-# OBTER PROPOSTA
-# ============================================================
-
 @app.route(
     "/api/obter-proposta/<int:id_proposta>",
     methods=["GET"]
@@ -2302,10 +2513,6 @@ def obter_proposta(
         }), 500
 
 
-# ============================================================
-# STATUS
-# ============================================================
-
 @app.route(
     "/api/status",
     methods=["GET"]
@@ -2373,10 +2580,6 @@ def status():
         }), 500
 
 
-# ============================================================
-# REVOGAR TOKEN LOCAL
-# ============================================================
-
 @app.route(
     "/api/oauth/revogar",
     methods=["POST"]
@@ -2412,11 +2615,6 @@ def revogar_oauth():
                 str(e)
 
         }), 500
-
-
-# ============================================================
-# HOME
-# ============================================================
 
 @app.route(
     "/",
