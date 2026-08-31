@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 
 import requests
+import base64
+from io import BytesIO
 import os
 import json
 from datetime import datetime, timedelta
@@ -1699,6 +1701,181 @@ def testar_tiny():
 
         }), e.status or 500
 
+
+def gerar_pdf_proposta(
+    dados_front,
+    dados_orcamento,
+    orcamento_id,
+    introducao_proposta,
+    observacao_padrao,
+    total_carrinho,
+    valor_avista,
+    valor_parcela_3x,
+    valor_parcela_12x,
+    data_proposta,
+    outros_itens_servicos
+):
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_RIGHT
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from xml.sax.saxutils import escape
+
+    def dinheiro_pdf(valor):
+        try:
+            valor = float(valor or 0)
+        except (TypeError, ValueError):
+            valor = 0.0
+        return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    def texto(valor):
+        return escape(str(valor or ""))
+
+    cliente = dados_front.get("cliente", {}) or {}
+    endereco = dados_front.get("endereco", {}) or {}
+    carrinho = dados_front.get("carrinho", []) or []
+
+    numero_proposta = (
+        dados_orcamento.get("numero")
+        or dados_orcamento.get("numeroOrcamento")
+        or orcamento_id
+    ) if isinstance(dados_orcamento, dict) else orcamento_id
+
+    nome_cliente = cliente.get("nome") or cliente.get("razao_social") or "Cliente"
+    documento = cliente.get("cpf_cnpj", "")
+    aos_cuidados = cliente.get("aos_cuidados", "")
+    email = cliente.get("email", "")
+    telefone = cliente.get("telefone", "")
+
+    endereco_partes = []
+    if endereco.get("logradouro"):
+        endereco_partes.append(str(endereco["logradouro"]))
+    if endereco.get("numero"):
+        endereco_partes.append(f"Nº {endereco['numero']}")
+    if endereco.get("complemento"):
+        endereco_partes.append(str(endereco["complemento"]))
+    linha_endereco = ", ".join(endereco_partes)
+
+    cidade_uf = ""
+    if endereco.get("cidade"):
+        cidade_uf = str(endereco["cidade"])
+    if endereco.get("uf"):
+        cidade_uf = f"{cidade_uf} - {endereco['uf']}" if cidade_uf else str(endereco["uf"])
+    if endereco.get("cep"):
+        cidade_uf = f"{cidade_uf} - {endereco['cep']}" if cidade_uf else str(endereco["cep"])
+
+    contatos = []
+    if telefone:
+        contatos.append(f"Fone: {telefone}")
+    if email:
+        contatos.append(f"E-mail: {email}")
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        rightMargin=12*mm, leftMargin=12*mm,
+        topMargin=12*mm, bottomMargin=12*mm,
+        title=f"Proposta Comercial Nº {numero_proposta}",
+        author="BRFER Comércio de Ferramentas LTDA"
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="PDFBody", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=11, spaceAfter=2))
+    styles.add(ParagraphStyle(name="PDFSmall", parent=styles["Normal"], fontName="Helvetica", fontSize=7.5, leading=9))
+    styles.add(ParagraphStyle(name="PDFTitle", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=13, leading=15))
+    styles.add(ParagraphStyle(name="PDFSection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9, leading=11, spaceBefore=3, spaceAfter=3))
+    styles.add(ParagraphStyle(name="PDFRight", parent=styles["Normal"], fontName="Helvetica", fontSize=8, leading=10, alignment=TA_RIGHT))
+    styles.add(ParagraphStyle(name="PDFRightBold", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8.5, leading=10, alignment=TA_RIGHT))
+    styles.add(ParagraphStyle(name="PDFOtherTotal", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=13, leading=15))
+
+    story = []
+
+    empresa = [
+        Paragraph("<b>BRFER COMÉRCIO DE FERRAMENTAS LTDA</b>", styles["PDFBody"]),
+        Paragraph("40.954.410/0001-96", styles["PDFBody"]),
+        Paragraph("www.brfer.com.br", styles["PDFBody"]),
+        Paragraph("(11) 4362-5151", styles["PDFBody"]),
+        Paragraph("Rua Coronel Francisco Rodrigues Seckler, 53, galpão", styles["PDFBody"]),
+        Paragraph("Paulicéia, São Bernardo do Campo - SP", styles["PDFBody"]),
+        Paragraph("09.693-050", styles["PDFBody"]),
+    ]
+    titulo = [
+        Paragraph(f"<b>Proposta Comercial Nº {texto(numero_proposta)}</b>", styles["PDFTitle"]),
+        Paragraph(f"Data: {texto(data_proposta)}", styles["PDFBody"]),
+    ]
+    header = Table([[empresa, titulo]], colWidths=[120*mm, 58*mm])
+    header.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"TOP"),("ALIGN",(1,0),(1,0),"RIGHT")]))
+    story += [header, Spacer(1,3*mm)]
+
+    cliente_linhas = [f"<b>{texto(nome_cliente)}</b>"]
+    if documento: cliente_linhas.append(f"CPF/CNPJ: {texto(documento)}")
+    if aos_cuidados: cliente_linhas.append(f"Aos cuidados de: {texto(aos_cuidados)}")
+    if linha_endereco: cliente_linhas.append(texto(linha_endereco))
+    if cidade_uf: cliente_linhas.append(texto(cidade_uf))
+    if contatos: cliente_linhas.append(texto(" | ".join(contatos)))
+
+    story.append(Paragraph("Para", styles["PDFSection"]))
+    cliente_box = Table([[Paragraph("<br/>".join(cliente_linhas), styles["PDFBody"])]], colWidths=[178*mm])
+    cliente_box.setStyle(TableStyle([("BOX",(0,0),(-1,-1),0.5,colors.black),("LEFTPADDING",(0,0),(-1,-1),5),("RIGHTPADDING",(0,0),(-1,-1),5),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]))
+    story += [cliente_box, Spacer(1,3*mm)]
+
+    intro_html = texto(introducao_proposta).replace("\n", "<br/>")
+    story += [Paragraph(intro_html, styles["PDFBody"]), Spacer(1,3*mm)]
+
+    story.append(Paragraph("Itens de produto ou serviço", styles["PDFSection"]))
+    rows = [[Paragraph("<b>Nº</b>",styles["PDFSmall"]),Paragraph("<b>Item / SKU</b>",styles["PDFSmall"]),Paragraph("<b>Qtd</b>",styles["PDFSmall"]),Paragraph("<b>Un</b>",styles["PDFSmall"]),Paragraph("<b>Preço un.</b>",styles["PDFSmall"]),Paragraph("<b>Total</b>",styles["PDFSmall"])]]
+    total_produtos = 0.0
+    total_quantidades = 0.0
+    for idx,item in enumerate(carrinho,1):
+        nome = item.get("nome") or item.get("descricao") or "Produto"
+        sku = item.get("sku") or ""
+        qtd = float(item.get("quantidade",1) or 1)
+        preco = float(item.get("preco_unitario",0) or 0)
+        total_item = qtd * preco
+        total_produtos += total_item
+        total_quantidades += qtd
+        item_html = f"<b>{texto(nome)}</b>" + (f"<br/><font size='7'>SKU: {texto(sku)}</font>" if sku else "")
+        preco_html = f"<b>{dinheiro_pdf(preco)}</b><br/><font size='7'>Frete: a combinar</font>"
+        rows.append([Paragraph(str(idx),styles["PDFSmall"]),Paragraph(item_html,styles["PDFSmall"]),Paragraph(f"{qtd:.2f}".replace(".",","),styles["PDFSmall"]),Paragraph(texto(item.get("unidade") or "UN"),styles["PDFSmall"]),Paragraph(preco_html,styles["PDFRight"]),Paragraph(f"<b>{dinheiro_pdf(total_item)}</b>",styles["PDFRight"])])
+    rows.append([Paragraph("",styles["PDFSmall"]),Paragraph("<b>Totais</b>",styles["PDFSmall"]),Paragraph(f"<b>{total_quantidades:.2f}</b>".replace(".",","),styles["PDFSmall"]),Paragraph("",styles["PDFSmall"]),Paragraph("",styles["PDFSmall"]),Paragraph(f"<b>{dinheiro_pdf(total_produtos)}</b>",styles["PDFRightBold"])])
+    tabela = Table(rows,colWidths=[10*mm,78*mm,15*mm,12*mm,31*mm,32*mm],repeatRows=1)
+    tabela.setStyle(TableStyle([("GRID",(0,0),(-1,-1),0.4,colors.black),("VALIGN",(0,0),(-1,-1),"MIDDLE"),("BACKGROUND",(0,0),(-1,0),colors.HexColor("#f3f3f3")),("ALIGN",(0,0),(0,-1),"CENTER"),("ALIGN",(2,1),(3,-1),"CENTER"),("LEFTPADDING",(0,0),(-1,-1),4),("RIGHTPADDING",(0,0),(-1,-1),4),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]))
+    story += [tabela, Spacer(1,4*mm)]
+
+    story.append(Paragraph("Outros itens ou serviços", styles["PDFSection"]))
+    outros = [
+        Paragraph(f"<b>{dinheiro_pdf(total_carrinho)}</b>",styles["PDFOtherTotal"]),
+        Spacer(1,1.5*mm),
+        Paragraph(f"• &nbsp;<b>{dinheiro_pdf(valor_avista)}</b> à vista (TED/PIX)",styles["PDFBody"]),
+        Paragraph(f"• &nbsp;<b>3x de {dinheiro_pdf(valor_parcela_3x)}</b> SEM JUROS",styles["PDFBody"]),
+        Paragraph(f"• &nbsp;<b>12x de {dinheiro_pdf(valor_parcela_12x)}</b> COM JUROS NO CARTÃO",styles["PDFBody"]),
+    ]
+    if outros_itens_servicos:
+        for linha in str(outros_itens_servicos).splitlines():
+            linha=linha.strip()
+            if not linha: continue
+            n=linha.casefold()
+            if n.startswith(("condições de pagamento","total:","pagamento à vista","3x de","12x de")): continue
+            outros.append(Paragraph(texto(linha),styles["PDFSmall"]))
+    outros_box=Table([[outros]],colWidths=[178*mm])
+    outros_box.setStyle(TableStyle([("BOX",(0,0),(-1,-1),0.6,colors.black),("LEFTPADDING",(0,0),(-1,-1),6),("RIGHTPADDING",(0,0),(-1,-1),6),("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),("VALIGN",(0,0),(-1,-1),"TOP")]))
+    story += [outros_box, Spacer(1,4*mm)]
+
+    resumo=Table([[Paragraph("<b>Data</b>",styles["PDFSmall"]),Paragraph("<b>Total dos itens</b>",styles["PDFSmall"]),Paragraph("<b>Total da proposta</b>",styles["PDFSmall"])],[Paragraph(texto(data_proposta),styles["PDFSmall"]),Paragraph(dinheiro_pdf(total_produtos),styles["PDFRight"]),Paragraph(dinheiro_pdf(total_carrinho),styles["PDFRightBold"])]],colWidths=[55*mm,61*mm,62*mm])
+    resumo.setStyle(TableStyle([("GRID",(0,0),(-1,-1),0.4,colors.black),("BACKGROUND",(0,0),(-1,0),colors.HexColor("#f3f3f3")),("ALIGN",(1,0),(-1,-1),"RIGHT"),("VALIGN",(0,0),(-1,-1),"MIDDLE"),("LEFTPADDING",(0,0),(-1,-1),4),("RIGHTPADDING",(0,0),(-1,-1),4),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]))
+    story += [resumo, Spacer(1,4*mm)]
+
+    story.append(Paragraph("Observações",styles["PDFSection"]))
+    obs=Table([[Paragraph(texto(observacao_padrao).replace("\n","<br/>"),styles["PDFBody"])]],colWidths=[178*mm])
+    obs.setStyle(TableStyle([("BOX",(0,0),(-1,-1),0.4,colors.black),("LEFTPADDING",(0,0),(-1,-1),5),("RIGHTPADDING",(0,0),(-1,-1),5),("TOPPADDING",(0,0),(-1,-1),5),("BOTTOMPADDING",(0,0),(-1,-1),5)]))
+    story += [obs, Spacer(1,5*mm), Paragraph("Atenciosamente,",styles["PDFBody"]), Paragraph("Departamento de vendas",styles["PDFBody"])]
+
+    def rodape(canvas,document):
+        canvas.saveState(); canvas.setFont("Helvetica",7); canvas.drawRightString(A4[0]-12*mm,7*mm,f"Página {document.page}"); canvas.restoreState()
+    doc.build(story,onFirstPage=rodape,onLaterPages=rodape)
+    return buffer.getvalue()
 @app.route(
     "/api/gerar-proposta",
     methods=["POST"]
@@ -2138,52 +2315,65 @@ def gerar_proposta():
 
         if response_get.ok:
 
+            pdf_bytes = gerar_pdf_proposta(
+                dados_front=dados_front,
+                dados_orcamento=dados_orcamento if isinstance(dados_orcamento, dict) else {},
+                orcamento_id=orcamento_id,
+                introducao_proposta=introducao_proposta,
+                observacao_padrao=observacao_padrao,
+                total_carrinho=total_carrinho,
+                valor_avista=valor_avista,
+                valor_parcela_3x=valor_parcela_3x,
+                valor_parcela_12x=valor_parcela_12x,
+                data_proposta=data_proposta,
+                outros_itens_servicos=outros_itens_servicos,
+            )
+
+            pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
+
             return jsonify({
-
-                "sucesso":
-                    True,
-
-                "id":
-                    orcamento_id,
-
+                "sucesso": True,
+                "id": orcamento_id,
                 "contato": {
                     "id": contato_id,
                     "criado_agora": contato.get("criado_agora", False)
                 },
-
-                "criacao":
-                    dados_criacao,
-
-                "orcamento":
-                    dados_orcamento
-
+                "criacao": dados_criacao,
+                "orcamento": dados_orcamento,
+                "pdf_base64": pdf_base64,
+                "pdf_filename": f"proposta_comercial_{orcamento_id}.pdf"
             }), 200
 
+
+        pdf_bytes = gerar_pdf_proposta(
+            dados_front=dados_front,
+            dados_orcamento=dados_orcamento if isinstance(dados_orcamento, dict) else {},
+            orcamento_id=orcamento_id,
+            introducao_proposta=introducao_proposta,
+            observacao_padrao=observacao_padrao,
+            total_carrinho=total_carrinho,
+            valor_avista=valor_avista,
+            valor_parcela_3x=valor_parcela_3x,
+            valor_parcela_12x=valor_parcela_12x,
+            data_proposta=data_proposta,
+            outros_itens_servicos=outros_itens_servicos,
+        )
+
+        pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
+
         return jsonify({
-
-            "sucesso":
-                True,
-
-            "id":
-                orcamento_id,
-
+            "sucesso": True,
+            "id": orcamento_id,
             "contato": {
                 "id": contato_id,
                 "criado_agora": contato.get("criado_agora", False)
             },
-
-            "criacao":
-                dados_criacao,
-
-            "erro_get":
-                True,
-
-            "status_get_tiny":
-                response_get.status_code,
-
-            "resposta_get_tiny":
-                dados_orcamento
-
+            "criacao": dados_criacao,
+            "erro_get": True,
+            "status_get_tiny": response_get.status_code,
+            "resposta_get_tiny": dados_orcamento,
+            "pdf_base64": pdf_base64,
+            "pdf_filename": f"proposta_comercial_{orcamento_id}.pdf"
         }), 200
 
 
