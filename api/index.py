@@ -1624,7 +1624,7 @@ def localizar_contato(
             "HTTP:",
             response.status_code
         )
-        
+
         if not response.ok:
 
             texto_erro = json.dumps(
@@ -1931,7 +1931,7 @@ def criar_contato(dados_front):
             contato_existente = localizar_contato(
                 documento,
                 nome,
-                busca_exaustiva=True
+                busca_exaustiva=False
             )
 
             if contato_existente:
@@ -2014,7 +2014,7 @@ def obter_ou_criar_contato(dados_front):
     contato = localizar_contato(
         documento,
         nome,
-        busca_exaustiva=True
+        busca_exaustiva=False
     )
 
     if contato:
