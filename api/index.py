@@ -257,9 +257,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
     contato_linha = []
     if telefone:
-        fixTelefoneShow = {escape_html(telefone)}
-        fixTelefoneShow = fixTelefoneShow[:2] + " " + fixTelefoneShow[2:7] + "-" + fixTelefoneShow[7:]
-        contato_linha.append(f"Fone: fixTelefoneShow")
+        contato_linha.append(f"Fone: {escape_html(telefone)}")
     if celular and celular != telefone:
         contato_linha.append(f"Celular: {escape_html(celular)}")
     if email:
