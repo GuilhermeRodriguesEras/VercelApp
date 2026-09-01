@@ -257,7 +257,9 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
     contato_linha = []
     if telefone:
-        contato_linha.append(f"Fone: {escape_html(telefone)}")
+        fixTelefoneShow = {escape_html(telefone)}
+        fixTelefoneShow = fixTelefoneShow[:2] + " " + fixTelefoneShow[2:7] + "-" + fixTelefoneShow[7:]
+        contato_linha.append(f"Fone: fixTelefoneShow")
     if celular and celular != telefone:
         contato_linha.append(f"Celular: {escape_html(celular)}")
     if email:
@@ -454,7 +456,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         f"<h2>Pagamento à vista com desconto: <b> R$ {numero_pt(valor_avista)}</b></h2><br/>"
         f"<h2><b>3x de R$ {numero_pt(valor_3x)}</b> sem juros</h2><br/>"
         f"<h2><b>12x de R$ {numero_pt(valor_12x)}</b> com juros no cartão. </h2><br/><br/>"
-        "*Frete a combinar. Entre em contato com nosso time de vendas para obter uma cotação"
+        "*Frete a combinar. Entre em contato com nosso time de vendas para obter uma cotação."
     )
     observacoes_html = escape_html(observacoes).replace("\n", "<br/>")
 
@@ -477,7 +479,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
     story.append(Paragraph("Atenciosamente,", normal))
     story.append(Spacer(1, 3 * mm))
-    story.append(Paragraph("Departamento de vendas", normal))
+    story.append(Paragraph("Departamento de Vendas.", normal))
 
     doc.build(story)
     buffer.seek(0)
