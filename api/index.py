@@ -1588,7 +1588,6 @@ def localizar_contato(
     nome=None,
     busca_exaustiva=False
 ):
-
     documento = limpar_documento(cpf_cnpj)
 
     if not documento:
@@ -1600,7 +1599,6 @@ def localizar_contato(
     vistos = set()
 
     for situacao in situacoes:
-
         params = {
             "cpfCnpj": documento,
             "limit": 100,
@@ -1626,11 +1624,48 @@ def localizar_contato(
             "HTTP:",
             response.status_code
         )
-
+        
         if not response.ok:
+
+            texto_erro = json.dumps(
+                dados,
+                ensure_ascii=False
+            ).lower()
+
+            contato_nao_encontrado = (
+                "cpf/cnpj not found" in texto_erro
+                or
+                "cpf/cnpj não encontrado" in texto_erro
+                or
+                "cpf/cnpj nao encontrado" in texto_erro
+                or
+                "cpf ou cnpj não encontrado" in texto_erro
+                or
+                "cpf ou cnpj nao encontrado" in texto_erro
+                or
+                (
+                    response.status_code == 404
+                    and (
+                        "not found" in texto_erro
+                        or
+                        "não encontrado" in texto_erro
+                        or
+                        "nao encontrado" in texto_erro
+                    )
+                )
+            )
+
+            if contato_nao_encontrado:
+                print(
+                    "CPF/CNPJ não encontrado no Tiny. "
+                    "O contato será criado automaticamente."
+                )
+
+                return None
+
             if situacao:
                 continue
-
+            
             raise TinyAPIError(
                 "Erro ao consultar contato no Tiny.",
                 response.status_code,
@@ -1646,7 +1681,6 @@ def localizar_contato(
             contatos = []
 
         for contato in contatos:
-
             contato_id = contato.get("id")
 
             if contato_id in vistos:
@@ -1660,9 +1694,8 @@ def localizar_contato(
 
             if documento_tiny == documento:
                 return contato
-
+            
     if nome:
-
         response = tiny_request(
             "GET",
             "/contatos",
@@ -1683,16 +1716,13 @@ def localizar_contato(
         )
 
         if response.ok:
-
             contatos = dados.get(
                 "itens",
                 []
             )
 
             if isinstance(contatos, list):
-
                 for contato in contatos:
-
                     documento_tiny = limpar_documento(
                         contato.get("cpfCnpj")
                     )
@@ -1701,7 +1731,6 @@ def localizar_contato(
                         return contato
 
     if busca_exaustiva:
-
         limit = 100
         offset = 0
         total = None
@@ -1729,7 +1758,6 @@ def localizar_contato(
             )
 
             if not response.ok:
-
                 raise TinyAPIError(
                     "Erro ao percorrer contatos do Tiny para localizar o CPF/CNPJ.",
                     response.status_code,
@@ -1745,13 +1773,11 @@ def localizar_contato(
                 contatos = []
 
             for contato in contatos:
-
                 documento_tiny = limpar_documento(
                     contato.get("cpfCnpj")
                 )
 
                 if documento_tiny == documento:
-
                     print(
                         "Contato localizado na busca exaustiva. ID:",
                         contato.get("id")
@@ -1765,7 +1791,6 @@ def localizar_contato(
             )
 
             if isinstance(paginacao, dict):
-
                 try:
                     total = int(
                         paginacao.get("total")
