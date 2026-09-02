@@ -2484,8 +2484,8 @@ def gerar_proposta():
 
         observacao_pagamento = (
             f"{observacao_padrao}\n\n"
-            "Condições de pagamento do carrinho\n"
-            f"Total do carrinho: {dinheiro(total_carrinho)}\n"
+            "Condições de pagamento:\n"
+            f"Total: {dinheiro(total_carrinho)}\n"
             f"Pagamento à vista com desconto: {dinheiro(valor_avista)}\n"
             f"3x de {dinheiro(valor_parcela_3x)} sem juros\n"
             f"12x de {dinheiro(valor_parcela_12x)} com juros no cartão."
