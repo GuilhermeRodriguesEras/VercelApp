@@ -158,9 +158,6 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
     buffer = BytesIO()
 
-    # O Tiny utiliza praticamente toda a largura útil da página.
-    # 10 mm de margem deixa as caixas de endereço, itens, resumo e observações
-    # com a mesma largura visual do PDF original.
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
@@ -1838,12 +1835,25 @@ def criar_contato(dados_front):
             "CPF/CNPJ do cliente não informado."
         )
 
+    if len(documento) not in (11, 14):
+        raise TinyAPIError(
+            "CPF/CNPJ inválido. O documento deve conter 11 dígitos (CPF) "
+            "ou 14 dígitos (CNPJ)."
+        )
+
     if not nome:
         raise TinyAPIError(
             "Nome do cliente não informado."
         )
 
     codigo = f"WEB-{documento}"
+
+    # O Tiny diferencia explicitamente pessoa física e jurídica.
+    # CPF  -> F (Física)
+    # CNPJ -> J (Jurídica)
+    # Sem esse campo, o Tiny pode interpretar incorretamente o cadastro
+    # quando o documento informado é um CNPJ.
+    tipo_pessoa = "J" if len(documento) == 14 else "F"
 
     endereco_tiny = {
         "endereco": endereco.get("logradouro"),
@@ -1865,6 +1875,7 @@ def criar_contato(dados_front):
     payload = {
         "nome": nome,
         "codigo": codigo,
+        "tipoPessoa": tipo_pessoa,
         "cpfCnpj": documento,
         "email": dados_front.get("email"),
         "telefone": dados_front.get("telefone"),
@@ -1984,6 +1995,7 @@ def criar_contato(dados_front):
         "id": contato_id,
         "nome": nome,
         "cpfCnpj": documento,
+        "tipoPessoa": tipo_pessoa,
         "criado_agora": True,
         "resposta": dados
     }
