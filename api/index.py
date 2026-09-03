@@ -1846,13 +1846,9 @@ def criar_contato(dados_front):
             "Nome do cliente não informado."
         )
 
-    codigo = f"WEB-{documento}"
+    codigo = f"{documento}"
 
-    # O Tiny diferencia explicitamente pessoa física e jurídica.
-    # CPF  -> F (Física)
-    # CNPJ -> J (Jurídica)
-    # Sem esse campo, o Tiny pode interpretar incorretamente o cadastro
-    # quando o documento informado é um CNPJ.
+
     tipo_pessoa = "J" if len(documento) == 14 else "F"
 
     endereco_tiny = {
