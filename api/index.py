@@ -2418,8 +2418,6 @@ def gerar_proposta():
             )
 
         introducao_proposta = (
-            dados_front.get("introducao")
-            or
             "Prezado cliente, seguem abaixo proposta comercial com "
             "pagamento à vista com desconto e nossos dados bancários:\n\n"
             "Segue nossos dados bancários:\n"
@@ -2517,7 +2515,7 @@ def gerar_proposta():
                 data_proposta,
 
             "dataProximoContato":
-                data_proximo_contato,
+                data_proximo_contato_str,
 
             "outrosItensServicos":
                 outros_itens_servicos,
