@@ -2055,6 +2055,33 @@ def obter_ou_criar_contato(dados_front):
         dados_front
     )
 
+def obter_produto_por_id(produto_id):
+    if not produto_id:
+        return None
+
+    response = tiny_request(
+        "GET",
+        f"/produtos/{produto_id}"
+    )
+
+    dados = resposta_json(response)
+
+    print(
+        "Consulta produto por ID",
+        produto_id,
+        "HTTP",
+        response.status_code
+    )
+
+    if not response.ok:
+        raise TinyAPIError(
+            "Erro ao obter produto pelo ID.",
+            response.status_code,
+            dados
+        )
+
+    return dados
+
 def localizar_produto_por_sku(
     sku
 ):
@@ -2392,25 +2419,18 @@ def gerar_proposta():
                     preco
             }
 
-            descricao = (
-
-                item.get(
-                    "descricaoComplementar"
-                )
-
-                or
-
-                item.get(
-                    "nome"
-                )
+            produto_detalhado = obter_produto_por_id(
+                produto_id
             )
 
+            descricao_complementar = (
+                produto_detalhado.get("descricaoComplementar")
+                if isinstance(produto_detalhado, dict)
+                else None
+            )
 
-            if descricao:
-
-                item_tiny[
-                    "descrComplementarOrc"
-                ] = descricao
+            if descricao_complementar:
+                item_tiny["descrComplementarOrc"] = descricao_complementar
 
 
             itens_tiny.append(
