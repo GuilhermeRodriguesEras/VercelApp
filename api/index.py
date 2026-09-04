@@ -2392,19 +2392,14 @@ def gerar_proposta():
                     preco
             }
 
-            descricao = (
-
-                item.get(
-                    "descricao"
-                )
-
-                or
-
-                item.get(
-                    "nome"
-                )
+            resposta_Request = tiny_request(
+                "GET",
+                f"produtos/{produto_id}"
             )
 
+            descricaoJson = resposta_json(resposta_Request)
+
+            descricao = descricaoJson["descricaoComplementar"]
 
             if descricao:
 
