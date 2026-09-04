@@ -2486,7 +2486,7 @@ def gerar_proposta():
             )
 
             if descricao_complementar:
-                item_tiny["descrComplementarOrc"] = descricao_complementar
+                item_tiny["descrComplementarOrc"] = html_para_texto(descricao_complementar)
 
 
             itens_tiny.append(
