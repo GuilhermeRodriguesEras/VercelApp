@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 import base64
 from io import BytesIO
 from html import unescape
+from html.parser import HTMLParser
 
 from flask import send_file
 
@@ -844,6 +845,61 @@ def oauth_autorizar():
     return redirect(
         url
     )
+
+class HTMLParaTexto(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.partes = []
+        self.tags_bloco = {
+            "p",
+            "div",
+            "br",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "li",
+        }
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+
+        if tag == "br":
+            self.partes.append("\n")
+        elif tag in self.tags_bloco:
+            self.partes.append("\n")
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+
+        if tag in self.tags_bloco and tag != "br":
+            self.partes.append("\n")
+
+    def handle_data(self, data):
+        self.partes.append(data)
+
+
+def html_para_texto(valor):
+    if not valor:
+        return ""
+
+    parser = HTMLParaTexto()
+    parser.feed(str(valor))
+    parser.close()
+
+    texto = "".join(parser.partes)
+
+    texto = unescape(texto)
+
+    linhas = []
+    for linha in texto.splitlines():
+        linha = " ".join(linha.split())
+        if linha:
+            linhas.append(linha)
+
+    return "\n".join(linhas).strip()
 
 @app.route(
     "/api/oauth/callback",
