@@ -2395,7 +2395,7 @@ def gerar_proposta():
             descricao = (
 
                 item.get(
-                    "descricao"
+                    "descricaoComplementar"
                 )
 
                 or
