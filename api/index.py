@@ -440,7 +440,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         corpo_itens,
         colWidths=[8 * mm, 86 * mm, 30 * mm, 13 * mm, 12 * mm, 20.5 * mm, 20.5 * mm],
         repeatRows=1,
-        splitInRow=1
+        splitInRow=1,
         splitByRow=1,
     )
 
