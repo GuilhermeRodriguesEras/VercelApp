@@ -2885,6 +2885,150 @@ def testar_refresh_oauth():
             "detalhes": str(e)
         }), 500
 
+@app.route("/api/oauth/renovar-agendado", methods=["GET"])
+def renovar_oauth_agendado():
+
+    inicio = int(time.time())
+
+    print("")
+    print("#" * 80)
+    print("[OAUTH CRON] INÍCIO DA RENOVAÇÃO AGENDADA")
+    print("[OAUTH CRON] Horário:", formatar_timestamp(inicio))
+    print("#" * 80)
+
+    cron_secret = os.getenv("CRON_SECRET")
+
+    authorization = request.headers.get(
+        "Authorization",
+        ""
+    )
+
+    token_recebido = ""
+
+    if authorization.startswith("Bearer "):
+        token_recebido = authorization[7:]
+
+    if not cron_secret:
+        print(
+            "[OAUTH CRON] ERRO: CRON_SECRET não configurado."
+        )
+
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "CRON_SECRET não configurado no servidor."
+        }), 500
+
+    if token_recebido != cron_secret:
+        print(
+            "[OAUTH CRON] Acesso negado: segredo do cron inválido."
+        )
+
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Não autorizado."
+        }), 401
+
+    print(
+        "[OAUTH CRON] Autenticação do cron validada."
+    )
+
+    try:
+        tokens_antes = carregar_tokens()
+
+        if not tokens_antes:
+            print(
+                "[OAUTH CRON] Nenhum token encontrado no Redis."
+            )
+
+            return jsonify({
+                "sucesso": False,
+                "mensagem": (
+                    "Nenhum token OAuth armazenado. "
+                    "É necessária uma autorização manual."
+                ),
+                "precisa_autorizar": True
+            }), 401
+
+        log_resumo_tokens(
+            "TOKENS ANTES DA RENOVAÇÃO AGENDADA",
+            tokens_antes
+        )
+
+        print(
+            "[OAUTH CRON] Forçando renovação do access_token."
+        )
+
+        novos_tokens = renovar_access_token(
+            tokens_antes
+        )
+
+        tokens_depois = carregar_tokens()
+
+        if tokens_depois:
+            log_resumo_tokens(
+                "TOKENS DEPOIS DA RENOVAÇÃO AGENDADA",
+                tokens_depois
+            )
+
+        fim = int(time.time())
+
+        print("")
+        print("#" * 80)
+        print("[OAUTH CRON] RENOVAÇÃO CONCLUÍDA COM SUCESSO")
+        print(
+            "[OAUTH CRON] Duração:",
+            fim - inicio,
+            "segundos"
+        )
+        print("#" * 80)
+
+        return jsonify({
+            "sucesso": True,
+            "mensagem": "Renovação OAuth agendada executada com sucesso.",
+            "access_token_recebido": bool(
+                novos_tokens.get("access_token")
+            ),
+            "refresh_token_recebido": bool(
+                novos_tokens.get("refresh_token")
+            ),
+            "expires_in": novos_tokens.get("expires_in"),
+            "duracao_segundos": fim - inicio
+        }), 200
+
+    except TinyAPIError as e:
+        fim = int(time.time())
+
+        print("")
+        print("#" * 80)
+        print("[OAUTH CRON] FALHA NA RENOVAÇÃO")
+        print("[OAUTH CRON] Mensagem:", str(e))
+        print(
+            "[OAUTH CRON] Duração:",
+            fim - inicio,
+            "segundos"
+        )
+        print("#" * 80)
+
+        return jsonify({
+            "sucesso": False,
+            "mensagem": str(e),
+            "detalhes": getattr(e, "detalhes", None),
+            "precisa_autorizar": True,
+            "autorizacao": "/api/oauth/autorizar"
+        }), getattr(e, "status_code", 500) or 500
+
+    except Exception as e:
+        print(
+            "[OAUTH CRON] Erro inesperado:",
+            repr(e)
+        )
+
+        return jsonify({
+            "sucesso": False,
+            "mensagem": "Erro inesperado durante a renovação agendada.",
+            "detalhes": str(e)
+        }), 500
+
 
 @app.route(
     "/api/status",
