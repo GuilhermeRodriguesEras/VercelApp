@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 
 import base64
 from io import BytesIO
-from html import unescape
+from html import unescape, escape as html_escape
 from html.parser import HTMLParser
 
 from flask import send_file
