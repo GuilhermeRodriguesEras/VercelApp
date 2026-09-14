@@ -23,7 +23,7 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether
 
 
 class TinyHTMLParagraphParser(HTMLParser):
@@ -342,8 +342,9 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         story.append(Paragraph(html_bloco, normal))
         story.append(Spacer(1, 1 * mm))
 
-    story.append(Paragraph("<b>Itens de produto ou serviço</b>", normal))
-    story.append(Spacer(1, 1 * mm))
+    # Mantém o título junto da tabela. Sem isso, o ReportLab pode deixar
+    # o título no fim da página e mover a tabela inteira para a próxima,
+    # criando um grande espaço em branco.
 
     itens = dados_orcamento.get("itens")
     if not isinstance(itens, list) or not itens:
@@ -446,7 +447,11 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         ("SPAN", (0, -1), (4, -1)),
         ("ALIGN", (5, -1), (6, -1), "RIGHT"),
     ]))
-    story.append(tabela_itens)
+    story.append(KeepTogether([
+        Paragraph("<b>Itens de produto ou serviço</b>", normal),
+        Spacer(1, 1 * mm),
+        tabela_itens,
+    ]))
     story.append(Spacer(1, 4.5 * mm))
 
     data_raw = primeiro_valor(
@@ -2456,7 +2461,7 @@ def gerar_proposta():
             )
 
             if descricao_complementar:
-                item_tiny["descrComplementarOrc"] = html_para_texto(descricao_complementar)
+                item_tiny["descrComplementarOrc"] = descricao_complementar
 
 
             itens_tiny.append(
