@@ -308,11 +308,11 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
     contato_linha = []
     if telefone:
-        auxTelefone = {escape_html(telefone)}
+        auxTelefone = escape_html(telefone)
         auxTelefone = "(" + auxTelefone[0:2] + ")" + auxTelefone[2:6] + "-" + auxTelefone[6:]
         contato_linha.append(f"Fone: {auxTelefone}")
     if celular:
-        auxCelular = {escape_html(celular)}
+        auxCelular = escape_html(celular)
         auxCeluluar = auxCelular = "(" + auxCelular[0:2] + ")" + auxCelular[2:7] + "-" + auxCelular[7:]
         contato_linha.append(f"Celular: {auxCeluluar}")
     if email:
