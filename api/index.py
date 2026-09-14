@@ -308,9 +308,13 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
     contato_linha = []
     if telefone:
-        contato_linha.append(f"Fone: {escape_html(telefone)}")
-    if celular and celular != telefone:
-        contato_linha.append(f"Celular: {escape_html(celular)}")
+        auxTelefone = {escape_html(telefone)}
+        auxTelefone = "(" + auxTelefone[0:2] + ")" + auxTelefone[2:6] + "-" + auxTelefone[6:]
+        contato_linha.append(f"Fone: {auxTelefone}")
+    if celular:
+        auxCelular = {escape_html(celular)}
+        auxCeluluar = auxCelular = "(" + auxCelular[0:2] + ")" + auxCelular[2:7] + "-" + auxCelular[7:]
+        contato_linha.append(f"Celular: {auxCeluluar}")
     if email:
         contato_linha.append(f"E-mail: {escape_html(email)}")
     if contato_linha:
@@ -439,7 +443,6 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
     tabela_itens = Table(
         corpo_itens,
         colWidths=[8 * mm, 86 * mm, 30 * mm, 13 * mm, 12 * mm, 20.5 * mm, 20.5 * mm],
-        repeatRows=1,
         splitInRow=1,
         splitByRow=1,
     )
