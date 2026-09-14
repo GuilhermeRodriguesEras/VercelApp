@@ -440,18 +440,18 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         corpo_itens,
         colWidths=[8 * mm, 86 * mm, 30 * mm, 13 * mm, 12 * mm, 20.5 * mm, 20.5 * mm],
         repeatRows=1,
+        splitInRow=1
         splitByRow=1,
     )
 
     tabela_itens.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.6, colors.black),
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EDEDED")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 3),
         ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ("TOPPADDING", (0, 0), (-1, -1), 2.0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2.0),
-        # Uso do índice explícito da última linha para permitir quebra de página sem erros
         ("SPAN", (0, last_row_idx), (4, last_row_idx)),
         ("ALIGN", (5, last_row_idx), (6, last_row_idx), "RIGHT"),
     ]))
