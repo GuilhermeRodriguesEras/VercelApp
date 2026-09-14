@@ -27,7 +27,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 
 
 class TinyHTMLParagraphParser(HTMLParser):
-    """Converte HTML simples retornado pelo Tiny para tags aceitas pelo ReportLab."""
 
     TAGS_FORMATACAO = {"b", "strong", "i", "em", "u"}
 
@@ -43,7 +42,6 @@ class TinyHTMLParagraphParser(HTMLParser):
             tag_saida = "b" if tag == "strong" else "i" if tag == "em" else tag
             self.partes.append(f"<{tag_saida}>")
         elif tag in {"p", "div"}:
-            # O fechamento acrescentará a quebra de linha.
             pass
         elif tag == "li":
             self.partes.append("- ")
@@ -68,7 +66,6 @@ class TinyHTMLParagraphParser(HTMLParser):
 
 
 def html_tiny_para_reportlab(valor):
-    """Preserva parágrafos, listas e formatação básica do HTML do Tiny."""
     if not valor:
         return ""
 
@@ -79,7 +76,6 @@ def html_tiny_para_reportlab(valor):
         resultado = parser.resultado()
         return resultado or html_escape(unescape(str(valor)))
     except Exception:
-        # Fallback seguro para descrições inesperadamente malformadas.
         return html_escape(unescape(str(valor))).replace("\n", "<br/>")
 
 app = Flask(__name__)
@@ -393,10 +389,8 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         complemento = texto(item.get("descrComplementarOrc"))
         descricao_html = f"<b>{escape_html(descricao)}</b>"
         if complemento and unescape(complemento).strip() != unescape(descricao).strip():
-            # O complemento pode vir como HTML do Tiny. Não usar escape_html aqui,
-            # pois isso transformaria <br>, <p>, <li> etc. em texto literal.
             complemento_formatado = html_tiny_para_reportlab(complemento)
-            descricao_html += f"<br/><font color='#555555'>{complemento_formatado}</font>"
+            descricao_html += f"<br/>{complemento_formatado}"
 
         corpo_itens.append([
             Paragraph(str(indice), table_center),
