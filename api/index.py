@@ -3,6 +3,7 @@ from flask_cors import CORS
 
 import requests
 import os
+import re
 import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -13,7 +14,7 @@ from urllib.parse import urlencode
 
 import base64
 from io import BytesIO
-from html import unescape, escape as html_escape
+from html import unescape
 from html.parser import HTMLParser
 
 from flask import send_file
@@ -23,14 +24,12 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, KeepTogether
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, CondPageBreak
+
 
 
 class TinyHTMLParagraphParser(HTMLParser):
-    """Converte HTML simples retornado pelo Tiny para tags aceitas pelo ReportLab."""
-
-    TAGS_FORMATACAO = {"b", "strong", "i", "em", "u"}
-
+    """Converte o HTML simples do Tiny para HTML compatível com ReportLab."""
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.partes = []
@@ -39,48 +38,33 @@ class TinyHTMLParagraphParser(HTMLParser):
         tag = tag.lower()
         if tag == "br":
             self.partes.append("<br/>")
-        elif tag in self.TAGS_FORMATACAO:
-            tag_saida = "b" if tag == "strong" else "i" if tag == "em" else tag
-            self.partes.append(f"<{tag_saida}>")
-        elif tag in {"p", "div"}:
-            # O fechamento acrescentará a quebra de linha.
-            pass
+        elif tag in {"strong", "b", "em", "i", "u"}:
+            saida = {"strong": "b", "em": "i"}.get(tag, tag)
+            self.partes.append(f"<{saida}>")
         elif tag == "li":
             self.partes.append("- ")
 
     def handle_endtag(self, tag):
         tag = tag.lower()
-        if tag in self.TAGS_FORMATACAO:
-            tag_saida = "b" if tag == "strong" else "i" if tag == "em" else tag
-            self.partes.append(f"</{tag_saida}>")
-        elif tag in {"p", "div", "li"}:
+        if tag in {"strong", "b", "em", "i", "u"}:
+            saida = {"strong": "b", "em": "i"}.get(tag, tag)
+            self.partes.append(f"</{saida}>")
+        elif tag in {"p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6"}:
             self.partes.append("<br/>")
 
     def handle_data(self, data):
-        if data:
-            self.partes.append(html_escape(data).replace("\n", "<br/>"))
-
-    def resultado(self):
-        import re
-        resultado = "".join(self.partes)
-        resultado = re.sub(r"(?:<br/>\s*){3,}", "<br/><br/>", resultado)
-        return resultado.strip("<br/> \n\t")
+        self.partes.append(html_escape(data).replace("\n", "<br/>"))
 
 
 def html_tiny_para_reportlab(valor):
-    """Preserva parágrafos, listas e formatação básica do HTML do Tiny."""
     if not valor:
         return ""
-
     parser = TinyHTMLParagraphParser()
-    try:
-        parser.feed(unescape(str(valor)))
-        parser.close()
-        resultado = parser.resultado()
-        return resultado or html_escape(unescape(str(valor)))
-    except Exception:
-        # Fallback seguro para descrições inesperadamente malformadas.
-        return html_escape(unescape(str(valor))).replace("\n", "<br/>")
+    parser.feed(unescape(str(valor)))
+    parser.close()
+    resultado = "".join(parser.partes)
+    resultado = re.sub(r"(?:<br/>\s*){3,}", "<br/><br/>", resultado)
+    return resultado.strip("<br/> \n\t")
 
 app = Flask(__name__)
 
@@ -342,9 +326,11 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         story.append(Paragraph(html_bloco, normal))
         story.append(Spacer(1, 1 * mm))
 
-    # Mantém o título junto da tabela. Sem isso, o ReportLab pode deixar
-    # o título no fim da página e mover a tabela inteira para a próxima,
-    # criando um grande espaço em branco.
+    # Evita deixar apenas o título no final da página, sem impedir que a
+    # tabela seja dividida entre páginas quando for muito grande.
+    story.append(CondPageBreak(25 * mm))
+    story.append(Paragraph("<b>Itens de produto ou serviço</b>", normal))
+    story.append(Spacer(1, 1 * mm))
 
     itens = dados_orcamento.get("itens")
     if not isinstance(itens, list) or not itens:
@@ -391,11 +377,15 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         soma_quantidades += quantidade
         total_itens_calculado += total_item
 
-        complemento = texto(item.get("descrComplementarOrc"))
+        descricoes_html_pdf = dados_front.get("_descricoes_html_pdf") or []
+        complemento = texto(
+            descricoes_html_pdf[indice - 1]
+            if indice - 1 < len(descricoes_html_pdf)
+            else item.get("descrComplementarOrc")
+        )
         descricao_html = f"<b>{escape_html(descricao)}</b>"
-        if complemento and unescape(complemento).strip() != unescape(descricao).strip():
-            # O complemento pode vir como HTML do Tiny. Não usar escape_html aqui,
-            # pois isso transformaria <br>, <p>, <li> etc. em texto literal.
+        texto_complemento = re.sub(r"<[^>]+>", "", complemento)
+        if complemento and unescape(texto_complemento).strip() != unescape(descricao).strip():
             complemento_formatado = html_tiny_para_reportlab(complemento)
             descricao_html += f"<br/><font color='#555555'>{complemento_formatado}</font>"
 
@@ -447,11 +437,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         ("SPAN", (0, -1), (4, -1)),
         ("ALIGN", (5, -1), (6, -1), "RIGHT"),
     ]))
-    story.append(KeepTogether([
-        Paragraph("<b>Itens de produto ou serviço</b>", normal),
-        Spacer(1, 1 * mm),
-        tabela_itens,
-    ]))
+    story.append(tabela_itens)
     story.append(Spacer(1, 4.5 * mm))
 
     data_raw = primeiro_valor(
@@ -2340,6 +2326,7 @@ def gerar_proposta():
 
 
         itens_tiny = []
+        descricoes_html_pdf = []
 
         for indice, item in enumerate(
             carrinho,
@@ -2460,9 +2447,12 @@ def gerar_proposta():
                 else None
             )
 
-            if descricao_complementar:
-                item_tiny["descrComplementarOrc"] = descricao_complementar
+            # Guarda o HTML original apenas para o PDF local.
+            # O Tiny recebe texto simples nesse campo para não exibir tags.
+            descricoes_html_pdf.append(descricao_complementar or "")
 
+            if descricao_complementar:
+                item_tiny["descrComplementarOrc"] = html_para_texto(descricao_complementar)
 
             itens_tiny.append(
                 item_tiny
@@ -2694,6 +2684,8 @@ def gerar_proposta():
 
             # O PDF é produzido localmente pelo backend, usando os dados
             # efetivamente persistidos no Tiny e os dados do formulário.
+            dados_front["_descricoes_html_pdf"] = descricoes_html_pdf
+
             pdf_buffer = gerar_pdf_proposta(
                 dados_front,
                 dados_orcamento,
