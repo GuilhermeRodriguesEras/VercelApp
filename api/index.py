@@ -301,7 +301,9 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
 
     contato_linha = []
     if telefone:
-        contato_linha.append(f"Fone: {escape_html(telefone)}")
+        auxTelefone = escape_html(telefone)
+        auxTelefone = "(" + auxTelefone[0:2] +") " + auxTelefone[2:6] + "-" + auxTelefone[6:]
+        contato_linha.append(f"Fone: {auxTelefone}")
     if celular and celular != telefone:
         contato_linha.append(f"Celular: {escape_html(celular)}")
     if email:
@@ -460,8 +462,8 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         colWidths=[
             8 * mm,       # Nº
             20 * mm,      # Imagem
-            66 * mm,      # Item
-            30 * mm,      # SKU
+            76 * mm,      # Item
+            20 * mm,      # SKU
             13 * mm,      # Qtd
             12 * mm,      # Un
             20.5 * mm,    # Preço un
