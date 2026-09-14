@@ -302,6 +302,7 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
     contato_linha = []
     if telefone:
         auxTelefone = escape_html(telefone)
+        auxTelefone = "".join([char for char in auxTelefone if char.isdigit()])
         if(len(auxTelefone) == 10):
             auxTelefone = "(" + auxTelefone[0:2] +") " + auxTelefone[2:6] + "-" + auxTelefone[6:]
         else:
