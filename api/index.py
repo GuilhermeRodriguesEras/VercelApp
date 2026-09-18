@@ -85,7 +85,6 @@ BRFER_LOGO_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAJUAAABwCAIAAACYSaUpAAAACXBIWXMAAA7
 
 
 def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
-    """Gera o PDF local com dimensões e espaçamentos próximos ao PDF do Tiny."""
 
     cliente = dados_front.get("cliente") or {}
     endereco = dados_front.get("endereco") or {}
@@ -473,8 +472,6 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
             20.5 * mm,    # Preço un
             20.5 * mm,    # Total
         ],
-        # Não repetimos o cabeçalho na página seguinte.
-        # splitInRow permite que uma linha muito alta continue em outra página.
         splitByRow=1,
         splitInRow=1,
     )
@@ -2194,13 +2191,6 @@ def ObterImagemDoProduto(produto_id):
 
 
 def carregar_imagem_produto(url, max_width=18 * mm, max_height=18 * mm):
-    """Baixa uma imagem e a prepara para uso em uma célula do ReportLab.
-
-    Mantém a proporção original da imagem e limita suas dimensões máximas.
-    Se a imagem não puder ser carregada, retorna None para que o PDF
-    continue sendo gerado normalmente.
-    """
-
     if not url:
         return None
 
@@ -2215,7 +2205,6 @@ def carregar_imagem_produto(url, max_width=18 * mm, max_height=18 * mm):
         if not image_bytes:
             return None
 
-        # Primeiro obtemos as dimensões reais para preservar a proporção.
         reader = ImageReader(
             BytesIO(image_bytes)
         )
@@ -3034,7 +3023,6 @@ def obter_proposta(
     methods=["GET"]
 )
 def testar_refresh_oauth():
-    """Força uma renovação OAuth. Rota temporária para diagnóstico."""
     inicio = int(time.time())
     print("#" * 80)
     print("[OAUTH TESTE] INÍCIO DO TESTE DE REFRESH")
@@ -3414,5 +3402,27 @@ def imprimir_proposta(id_proposta):
     except Exception as e:
         return jsonify({
             "erro": "Erro interno ao tentar imprimir.",
+            "detalhes": str(e)
+        }), 500
+
+@app.route("/api/listar_propostas_comerciais", methods=["GET"])
+def listarPropostas():
+    try:
+        response = tiny_request("GET", f"/orcamentos")
+
+        dados = resposta_json(response)
+
+        return dados
+
+    except TinyAPIError as e:
+        return jsonify({
+            "erro": e.mensagem,
+            "status_tiny": e.status,
+            "resposta_tiny": e.resposta
+        }), e.status or 502
+
+    except Exception as e:
+        return jsonify({
+            "erro": "Erro interno ao tentar listar.",
             "detalhes": str(e)
         }), 500
