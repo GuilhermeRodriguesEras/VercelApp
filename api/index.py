@@ -3426,3 +3426,5 @@ def listarPropostas():
             "erro": "Erro interno ao tentar listar.",
             "detalhes": str(e)
         }), 500
+
+    
