@@ -28,7 +28,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 
 import pandas as pd
 
-
 class TinyHTMLParagraphParser(HTMLParser):
 
     TAGS_FORMATACAO = {"b", "strong", "i", "em", "u"}
@@ -3485,6 +3484,12 @@ def listarParaOSite():
 
             linhasDoDF.append(line)
 
-        break
+    df = pd.DataFrame(linhasDoDF, columns=titulos)
 
-    return jsonify({"arr":linhasDoDF}), 200
+    output = BytesIO
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Propostas')
+
+    output.seek(0)
+
+    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='propostas_comerciais.xlsx')
