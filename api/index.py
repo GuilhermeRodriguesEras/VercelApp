@@ -3439,7 +3439,6 @@ def listarParaOSite():
 
     #TODO adicionar tratamento para o situacoes
     arrayPropostas = listarPropostas(f"dataInicio={data_inicio}&data_fim={data_fim}")
-    arrayPropostas = resposta_json(arrayPropostas)
 
     titulos = ['Nº Da Proposta', 'Data', 'Data Prox Contato', 'Vendedor', 'Situação', 'Produto', 'Valor', 'Nome Cliente', 'Aos Cuidados', 'Fone', 'Celular', 'E-mail', 'Desconto', 'Frete']
 
