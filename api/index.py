@@ -26,6 +26,8 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 
+import pandas as pd
+
 
 class TinyHTMLParagraphParser(HTMLParser):
 
@@ -3406,9 +3408,9 @@ def imprimir_proposta(id_proposta):
         }), 500
 
 @app.route("/api/listar_propostas_comerciais", methods=["GET"])
-def listarPropostas():
+def listarPropostas(args = ''):
     try:
-        response = tiny_request("GET", f"/orcamentos?limit=100&situacao='Aguardando'")
+        response = tiny_request("GET", f"/orcamentos?{args}")
 
         dados = resposta_json(response)
 
@@ -3435,9 +3437,15 @@ def listarParaOSite():
     vendedor = request.args.get("vendedor")
     situacoes = request.args.getlist("situacoes")
 
-    return jsonify({
-        "data_i": data_inicio,
-        "data_fim": data_fim,
-        "vendedor": vendedor,
-        "situacoes": situacoes
-    }), 200
+    #TODO adicionar tratamento para o situacoes
+    arrayPropostas = listarPropostas(f"dataInicio={data_inicio}&data_fim={data_fim}")
+    arrayPropostas = resposta_json(arrayPropostas)
+
+    titulos = ['Nº Da Proposta', 'Data', 'Data Prox Contato', 'Vendedor', 'Situação', 'Produto', 'Valor', 'Nome Cliente', 'Aos Cuidados', 'Fone', 'Celular', 'E-mail', 'Desconto', 'Frete']
+
+    linhasDoDF = []
+    itens = arrayPropostas.get("itens", [])
+    print(len(itens))
+
+    #for i in range(len(itens)):
+    #    line = ['N/A']*len(titulos)
