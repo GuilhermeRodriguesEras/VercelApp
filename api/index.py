@@ -3444,7 +3444,7 @@ def listarParaOSite():
 
     linhasDoDF = []
     itens = arrayPropostas.get("itens", [])
-    return len(itens)
+    return jsonify({"val": len(itens)}), 200
 
     #for i in range(len(itens)):
     #    line = ['N/A']*len(titulos)
