@@ -3463,8 +3463,6 @@ def listarParaOSite():
         contato = tiny_request("GET", f"/contatos/{idContato}")
         contato = resposta_json(contato)
 
-        print(contato)
-
         ProdutosProposta = requestPropostaMomentanea.get("itens", [])
 
         for j in range(len(ProdutosProposta)):
@@ -3485,8 +3483,5 @@ def listarParaOSite():
             line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
 
             linhasDoDF.append(line)
-
-        if(i == 10):
-            break
 
     return jsonify({"titulos": titulos, "corpo": linhasDoDF})
