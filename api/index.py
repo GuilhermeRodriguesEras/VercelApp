@@ -3460,7 +3460,7 @@ def listarParaOSite():
         vendedor = getVendedor(requestPropostaMomentanea.get("assinatura", {}).get("saudacao", []))
         #TODO criar um pass baseado no vendedor que vem do front
 
-        return jsonify({'abc': requestPropostaMomentanea.get("contato")}), 200
+        return jsonify({'abc': requestPropostaMomentanea}), 200
 
         idContato = requestPropostaMomentanea.get("contato").get("id")
         contato = tiny_request("GET", f"/contatos/{idContato}")
