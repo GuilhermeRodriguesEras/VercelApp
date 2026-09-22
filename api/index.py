@@ -3473,24 +3473,27 @@ def listarParaOSite():
 
         ProdutosProposta = requestPropostaMomentanea.get("itens", [])
 
-        for j in range(len(ProdutosProposta)):
-            line = ['N/A']*14
-            line[0]  = itens[i].get("numeroProposta")
-            line[1]  = itens[i].get("data")
-            line[2]  = itens[i].get("dataProximoContato", "")
-            line[3]  = vendedor
-            line[4]  = itens[i].get("situacao", [])
-            line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
-            line[6]  = ProdutosProposta[j].get("quantidade")
-            line[7]  = float(ProdutosProposta[j].get("valorUnitario")) * int(line[6])
-            line[8]  = contato.get("observacoesDoContato", "")
-            line[9]  = contato.get("telefone", "")
-            line[10] = contato.get("celular", "")
-            line[11] = contato.get("email", "")
-            line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
-            line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
+        try:
+            for j in range(len(ProdutosProposta)):
+                line = ['N/A']*14
+                line[0]  = itens[i].get("numeroProposta")
+                line[1]  = itens[i].get("data")
+                line[2]  = itens[i].get("dataProximoContato", "")
+                line[3]  = vendedor
+                line[4]  = itens[i].get("situacao", [])
+                line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
+                line[6]  = ProdutosProposta[j].get("quantidade")
+                line[7]  = float(ProdutosProposta[j].get("valorUnitario")) * int(line[6])
+                line[8]  = contato.get("observacoesDoContato", "")
+                line[9]  = contato.get("telefone", "")
+                line[10] = contato.get("celular", "")
+                line[11] = contato.get("email", "")
+                line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
+                line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
 
-            linhasDoDF.append(line)
+                linhasDoDF.append(line)
+        except:
+            pass
 
         print("====================================================================================================")
         print("====================================================================================================")
