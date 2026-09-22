@@ -3452,7 +3452,7 @@ def listarParaOSite():
     linhasDoDF = []
     itens = arrayPropostas.get("itens", [])
 
-    return jsonify({'abc': itens[0].get("assinatura", {})}), 200
+    return jsonify({'abc': itens[0]}), 200
 
     for i in range(len(itens)):
 
