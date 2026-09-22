@@ -3408,7 +3408,7 @@ def imprimir_proposta(id_proposta):
 @app.route("/api/listar_propostas_comerciais", methods=["GET"])
 def listarPropostas():
     try:
-        response = tiny_request("GET", f"/orcamentos")
+        response = tiny_request("GET", f"/orcamentos?limit=2000")
 
         dados = resposta_json(response)
 
