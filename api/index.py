@@ -3456,12 +3456,20 @@ def listarParaOSite():
         requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
         requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
 
+        print("====================================================================================================")
+        print(i)
+        print("====================================================================================================")
+        print(requestPropostaMomentanea)
+        print("====================================================================================================")
+
         vendedor = getVendedor(requestPropostaMomentanea.get("assinatura").get("saudacao", ''))
         #TODO criar um pass baseado no vendedor que vem do front
 
         idContato = requestPropostaMomentanea.get("contato").get("id")
         contato = tiny_request("GET", f"/contatos/{idContato}")
         contato = resposta_json(contato)
+
+        print(contato)
 
         ProdutosProposta = requestPropostaMomentanea.get("itens", [])
 
@@ -3483,6 +3491,10 @@ def listarParaOSite():
             line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
 
             linhasDoDF.append(line)
+
+        print("====================================================================================================")
+        print("====================================================================================================")
+        print("====================================================================================================")
 
     df = pd.DataFrame(linhasDoDF, columns=titulos)
 
