@@ -3456,12 +3456,6 @@ def listarParaOSite():
         requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
         requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
 
-        print("====================================================================================================")
-        print(i)
-        print("====================================================================================================")
-        print(requestPropostaMomentanea)
-        print("====================================================================================================")
-
         vendedor = getVendedor(requestPropostaMomentanea.get("assinatura").get("saudacao", ''))
         #TODO criar um pass baseado no vendedor que vem do front
 
@@ -3473,30 +3467,26 @@ def listarParaOSite():
 
         ProdutosProposta = requestPropostaMomentanea.get("itens", [])
 
-        try:
-            for j in range(len(ProdutosProposta)):
-                line = ['N/A']*14
-                line[0]  = itens[i].get("numeroProposta")
-                line[1]  = itens[i].get("data")
-                line[2]  = itens[i].get("dataProximoContato", "")
-                line[3]  = vendedor
-                line[4]  = itens[i].get("situacao", [])
-                line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
-                line[6]  = ProdutosProposta[j].get("quantidade")
-                line[7]  = float(ProdutosProposta[j].get("valorUnitario")) * int(line[6])
-                line[8]  = contato.get("observacoesDoContato", "")
-                line[9]  = contato.get("telefone", "")
-                line[10] = contato.get("celular", "")
-                line[11] = contato.get("email", "")
-                line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
-                line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
+        for j in range(len(ProdutosProposta)):
+            line = ['N/A']*14
+            line[0]  = itens[i].get("numeroProposta")
+            line[1]  = itens[i].get("data")
+            line[2]  = itens[i].get("dataProximoContato", "")
+            line[3]  = vendedor
+            line[4]  = itens[i].get("situacao", [])
+            line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
+            line[6]  = ProdutosProposta[j].get("quantidade")
+            line[7]  = float(ProdutosProposta[j].get("valorUnitario")) * int(line[6])
+            line[8]  = contato.get("observacoesDoContato", "")
+            line[9]  = contato.get("telefone", "")
+            line[10] = contato.get("celular", "")
+            line[11] = contato.get("email", "")
+            line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
+            line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
 
-                linhasDoDF.append(line)
-        except:
-            pass
+            linhasDoDF.append(line)
 
-        print("====================================================================================================")
-        print("====================================================================================================")
-        print("====================================================================================================")
+        if(i == 10):
+            break
 
-    return jsonify({"titulos": titulos, "corpo": linhasDoDF}), 200
+    return jsonify({"titulos": titulos, "corpo": linhasDoDF})
