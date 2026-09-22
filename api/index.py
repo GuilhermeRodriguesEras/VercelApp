@@ -3452,16 +3452,13 @@ def listarParaOSite():
     linhasDoDF = []
     itens = arrayPropostas.get("itens", [])
 
-    return jsonify({'abc': itens[0]}), 200
-
     for i in range(len(itens)):
-
-        vendedor = getVendedor(itens[i].get("assinatura", {}).get("saudacao", []))
-        #TODO criar um pass baseado no vendedor que vem do front
-
         NumProposta = itens[i].get("numeroProposta", [])
         requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{NumProposta}")
         requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
+
+        vendedor = getVendedor(requestPropostaMomentanea.get("assinatura", {}).get("saudacao", []))
+        #TODO criar um pass baseado no vendedor que vem do front
 
         idContato = requestPropostaMomentanea.get("contato",[]).get("id", [])
         contato = tiny_request("GET", f"/contatos/{idContato}")
@@ -3472,19 +3469,19 @@ def listarParaOSite():
         for j in range(len(ProdutosProposta)):
             line = ['N/A']*14
             line[0]  = NumProposta
-            line[1]  = itens[i].get("data", [])
-            line[2]  = itens[i].get("dataProximoContato", [])
+            line[1]  = itens[i].get("data")
+            line[2]  = itens[i].get("dataProximoContato", "")
             line[3]  = vendedor
             line[4]  = itens[i].get("situacao", [])
-            line[5]  = ProdutosProposta[j].get("produto", []).get("descricao", [])
-            line[6]  = ProdutosProposta[j].get("quantidade", [])
-            line[7]  = float(ProdutosProposta[j].get("valorUnitario", [])) * int(line[6])
-            line[8]  = contato.get("observacoesDoContato", [])
-            line[9]  = contato.get("telefone", [])
-            line[10] = contato.get("celular", [])
-            line[11] = contato.get("email", [])
-            line[12] = requestPropostaMomentanea.get("extras", []).get("desconto", [])
-            line[13] = requestPropostaMomentanea.get("extras", []).get("frete", [])
+            line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
+            line[6]  = ProdutosProposta[j].get("quantidade")
+            line[7]  = float(ProdutosProposta[j].get("valorUnitario")) * int(line[6])
+            line[8]  = contato.get("observacoesDoContato", "")
+            line[9]  = contato.get("telefone", "")
+            line[10] = contato.get("celular", "")
+            line[11] = contato.get("email", "")
+            line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
+            line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
 
             linhasDoDF.append(line)
 
