@@ -3453,14 +3453,12 @@ def listarParaOSite():
     itens = arrayPropostas.get("itens", [])
 
     for i in range(len(itens)):
-        NumProposta = itens[i].get("numeroProposta", [])
-        requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{NumProposta}")
+        IdProposta = itens[i].get("id")
+        requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
         requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
 
-        vendedor = getVendedor(requestPropostaMomentanea.get("assinatura", {}).get("saudacao", []))
+        vendedor = getVendedor(requestPropostaMomentanea.get("assinatura").get("saudacao", ''))
         #TODO criar um pass baseado no vendedor que vem do front
-
-        return jsonify({'abc': requestPropostaMomentanea}), 200
 
         idContato = requestPropostaMomentanea.get("contato").get("id")
         contato = tiny_request("GET", f"/contatos/{idContato}")
@@ -3470,7 +3468,7 @@ def listarParaOSite():
 
         for j in range(len(ProdutosProposta)):
             line = ['N/A']*14
-            line[0]  = NumProposta
+            line[0]  = itens[i].get("numeroProposta")
             line[1]  = itens[i].get("data")
             line[2]  = itens[i].get("dataProximoContato", "")
             line[3]  = vendedor
