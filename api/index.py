@@ -3427,4 +3427,17 @@ def listarPropostas():
             "detalhes": str(e)
         }), 500
 
-    
+@app.route("/api/listarParaOSite", methods=["GET"])
+def listarParaOSite():
+
+    data_inicio = request.args.get("data_inicio")
+    data_fim = request.args.get("data_fim")
+    vendedor = request.args.get("vendedor")
+    situacoes = request.args.getlist("situacoes")
+
+    return jsonify({
+        "data_i": data_inicio,
+        "data_fim": data_fim,
+        "vendedor": vendedor,
+        "situacoes": situacoes
+    }), 200
