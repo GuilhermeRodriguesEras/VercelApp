@@ -3452,9 +3452,11 @@ def listarParaOSite():
     linhasDoDF = []
     itens = arrayPropostas.get("itens", [])
 
+    return jsonify({'abc': itens[0].get("assinatura", {})}), 200
+
     for i in range(len(itens)):
 
-        vendedor = getVendedor(itens[i].get("assinatura", []).get("saudacao", []))
+        vendedor = getVendedor(itens[i].get("assinatura", {}).get("saudacao", []))
         #TODO criar um pass baseado no vendedor que vem do front
 
         NumProposta = itens[i].get("numeroProposta", [])
