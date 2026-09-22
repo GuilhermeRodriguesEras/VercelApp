@@ -3496,12 +3496,4 @@ def listarParaOSite():
         print("====================================================================================================")
         print("====================================================================================================")
 
-    df = pd.DataFrame(linhasDoDF, columns=titulos)
-
-    output = BytesIO
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Propostas')
-
-    output.seek(0)
-
-    return send_file(output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name='propostas_comerciais.xlsx')
+    return jsonify({"titulos": titulos, "corpo": linhasDoDF}), 200
