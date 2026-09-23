@@ -3457,9 +3457,6 @@ def gerar_excel(titulos, linhasDoDF):
         vertical="center"
     )
 
-    formato_monetario = 'R$ #.##0,00'
-    colunas_monetarias = {6, 12, 13}
-
     for coluna, titulo in enumerate(titulos, start=1):
         celula = ws.cell(
             row=1,
@@ -3485,10 +3482,6 @@ def gerar_excel(titulos, linhasDoDF):
             celula.border = borda
             celula.alignment = alinhamento
 
-            indice = numero_coluna - 1 
-            if indice in colunas_monetarias: 
-                celula.number_format = 'R$ #.##0,00'
-
     for coluna in ws.columns:
 
         maior_tamanho = 0
@@ -3498,9 +3491,6 @@ def gerar_excel(titulos, linhasDoDF):
 
             if celula.value is not None:
                 tamanho = len(str(celula.value))
-
-                if celula.number_format == formato_monetario: 
-                    tamanho += 3
 
                 if tamanho > maior_tamanho:
                     maior_tamanho = tamanho
