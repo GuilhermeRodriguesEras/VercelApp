@@ -3431,11 +3431,14 @@ def listarPropostas(args = ''):
 @app.route("/api/listarParaOSite", methods=["GET"])
 def listarParaOSite():
 
-    def getVendedor(text):
-        try:
-            aux = text.split(",")
-            return aux[1]
-        except:
+    def getVendedor(saudacao, responsavel):
+        if 'rose' in saudacao or 'rose' in responsavel:
+            return 'Rose'
+        elif 'amandha' in saudacao or 'amandha' in responsavel:
+            return 'Amandha'
+        elif 'jadhy' in saudacao or 'jadhy' in responsavel:
+            return 'Jadhy'
+        else:
             return ''
 
     data_inicio = request.args.get("data_inicio")
@@ -3456,7 +3459,10 @@ def listarParaOSite():
         requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
         requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
 
-        vendedor = getVendedor(requestPropostaMomentanea.get("assinatura").get("saudacao", ''))
+        aux1 = requestPropostaMomentanea.get("assinatura").get("saudacao", '').lower()
+        aux2 = requestPropostaMomentanea.get("assinatura").get("responsavel", '').lower()
+
+        vendedor = getVendedor(aux1, aux2)
         #TODO criar um pass baseado no vendedor que vem do front
 
         idContato = requestPropostaMomentanea.get("contato").get("id")
