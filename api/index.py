@@ -26,8 +26,8 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 
-import pandas as pd
 from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 
 class TinyHTMLParagraphParser(HTMLParser):
 
@@ -1944,7 +1944,7 @@ def criar_contato(dados_front):
         "email": dados_front.get("email"),
         "telefone": dados_front.get("telefone"),
         "endereco": endereco_tiny,
-        "observacoesDoContato": "Contato criado automaticamente pela solicitação de proposta comercial via site."
+        "observacoesDoContato": ""
     }
 
     payload = {
@@ -3435,13 +3435,78 @@ def gerar_excel(titulos, linhasDoDF):
     ws = wb.active
     ws.title = "Dados"
 
-    ws.append(titulos)
+    borda = Border(
+        left=Side(style="thin", color="000000"),
+        right=Side(style="thin", color="000000"),
+        top=Side(style="thin", color="000000"),
+        bottom=Side(style="thin", color="000000")
+    )
 
-    for linha in linhasDoDF:
-        ws.append(linha)
+    preenchimento_cabecalho = PatternFill(
+        fill_type="solid",
+        fgColor="000000"
+    )
 
+    fonte_cabecalho = Font(
+        color="FFFFFF",
+        bold=True
+    )
+
+    alinhamento = Alignment(
+        horizontal="center",
+        vertical="center"
+    )
+
+    for coluna, titulo in enumerate(titulos, start=1):
+        celula = ws.cell(
+            row=1,
+            column=coluna,
+            value=titulo
+        )
+
+        celula.fill = preenchimento_cabecalho
+        celula.font = fonte_cabecalho
+        celula.border = borda
+        celula.alignment = alinhamento
+
+    for numero_linha, linha in enumerate(linhasDoDF, start=2):
+
+        for numero_coluna, valor in enumerate(linha, start=1):
+
+            celula = ws.cell(
+                row=numero_linha,
+                column=numero_coluna,
+                value=valor
+            )
+
+            celula.border = borda
+            celula.alignment = alinhamento
+
+    for coluna in ws.columns:
+
+        maior_tamanho = 0
+        letra_coluna = coluna[0].column_letter
+
+        for celula in coluna:
+
+            if celula.value is not None:
+                tamanho = len(str(celula.value))
+
+                if tamanho > maior_tamanho:
+                    maior_tamanho = tamanho
+
+        largura = maior_tamanho + 2
+
+        if largura < 10:
+            largura = 10
+
+        ws.column_dimensions[letra_coluna].width = largura
+
+    ws.row_dimensions[1].height = 24
     arquivo = BytesIO()
+
     wb.save(arquivo)
+
     arquivo.seek(0)
 
     return arquivo
@@ -3461,13 +3526,14 @@ def listarParaOSite():
 
     data_inicio = request.args.get("data_inicio")
     data_fim = request.args.get("data_fim")
-    vendedor = request.args.get("vendedor")
+    vendedorGetParamether = request.args.get("vendedor")
     situacoes = request.args.getlist("situacoes")
 
     #TODO adicionar tratamento para o situacoes
     arrayPropostas = listarPropostas(f"dataInicio={data_inicio}&data_fim={data_fim}")
 
-    titulos = ['Nº Da Proposta', 'Data', 'Data Prox Contato', 'Vendedor', 'Situação', 'Produto', 'Valor', 'Nome Cliente', 'Aos Cuidados', 'Fone', 'Celular', 'E-mail', 'Desconto', 'Frete']
+    titulos = ['Nº Da Proposta', 'Data', 'Data Prox Contato', 'Vendedor', 'Situação', 'Produto', 
+               'Valor', 'Nome Cliente', 'Aos Cuidados', 'Fone', 'Celular', 'E-mail', 'Desconto', 'Frete']
 
     linhasDoDF = []
     itens = arrayPropostas.get("itens", [])
@@ -3481,7 +3547,6 @@ def listarParaOSite():
         aux2 = requestPropostaMomentanea.get("assinatura").get("responsavel", '').lower()
 
         vendedor = getVendedor(aux1, aux2)
-        #TODO criar um pass baseado no vendedor que vem do front
 
         idContato = requestPropostaMomentanea.get("contato").get("id")
         contato = tiny_request("GET", f"/contatos/{idContato}")
@@ -3497,9 +3562,9 @@ def listarParaOSite():
             line[3]  = vendedor
             line[4]  = itens[i].get("situacao", [])
             line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
-            line[6]  = ProdutosProposta[j].get("quantidade")
-            line[7]  = float(ProdutosProposta[j].get("valorUnitario")) * int(line[6])
+            line[6]  = float(ProdutosProposta[j].get("valorUnitario")) * int(ProdutosProposta[j].get("quantidade"))
             try:
+                line[7]  = contato.get("nome", "")
                 line[8]  = contato.get("observacoesDoContato", "")
                 line[9]  = contato.get("telefone", "")
                 line[10] = contato.get("celular", "")
