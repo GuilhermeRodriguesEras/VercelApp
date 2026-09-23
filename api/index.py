@@ -27,6 +27,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 
 import pandas as pd
+from openpyxl import Workbook
 
 class TinyHTMLParagraphParser(HTMLParser):
 
@@ -3428,6 +3429,23 @@ def listarPropostas(args = ''):
             "detalhes": str(e)
         }), 500
 
+
+def gerar_excel(titulos, linhasDoDF):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Dados"
+
+    ws.append(titulos)
+
+    for linha in linhasDoDF:
+        ws.append(linha)
+
+    arquivo = BytesIO()
+    wb.save(arquivo)
+    arquivo.seek(0)
+
+    return arquivo
+
 @app.route("/api/listarParaOSite", methods=["GET"])
 def listarParaOSite():
 
@@ -3493,4 +3511,13 @@ def listarParaOSite():
 
             linhasDoDF.append(line)
 
-    return jsonify({"titulos": titulos, "corpo": linhasDoDF})
+    arquivo = gerar_excel(titulos, linhasDoDF)
+
+    return send_file(
+        arquivo,
+        as_attachment=True,
+        download_name="FiltroPropostas.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    #return jsonify({"titulos": titulos, "corpo": linhasDoDF})
