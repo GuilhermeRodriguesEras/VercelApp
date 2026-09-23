@@ -3475,10 +3475,13 @@ def listarParaOSite():
             line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
             line[6]  = ProdutosProposta[j].get("quantidade")
             line[7]  = float(ProdutosProposta[j].get("valorUnitario")) * int(line[6])
-            line[8]  = contato.get("observacoesDoContato", "")
-            line[9]  = contato.get("telefone", "")
-            line[10] = contato.get("celular", "")
-            line[11] = contato.get("email", "")
+            try:
+                line[8]  = contato.get("observacoesDoContato", "")
+                line[9]  = contato.get("telefone", "")
+                line[10] = contato.get("celular", "")
+                line[11] = contato.get("email", "")
+            except:
+                pass
             line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
             line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
 
