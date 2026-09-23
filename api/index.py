@@ -3526,7 +3526,7 @@ def listarParaOSite():
 
     data_inicio = request.args.get("data_inicio")
     data_fim = request.args.get("data_fim")
-    vendedorGetParamether = request.args.get("vendedor")
+    vendedorGetParamether = request.args.get("vendedor").lower()
     situacoes = request.args.getlist("situacoes")
 
     #TODO adicionar tratamento para o situacoes
@@ -3538,6 +3538,8 @@ def listarParaOSite():
     linhasDoDF = []
     itens = arrayPropostas.get("itens", [])
 
+    keep = True
+
     for i in range(len(itens)):
         IdProposta = itens[i].get("id")
         requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
@@ -3547,6 +3549,7 @@ def listarParaOSite():
         aux2 = requestPropostaMomentanea.get("assinatura").get("responsavel", '').lower()
 
         vendedor = getVendedor(aux1, aux2)
+        situacao = itens[i].get("situacao", "")
 
         idContato = requestPropostaMomentanea.get("contato").get("id")
         contato = tiny_request("GET", f"/contatos/{idContato}")
@@ -3554,27 +3557,34 @@ def listarParaOSite():
 
         ProdutosProposta = requestPropostaMomentanea.get("itens", [])
 
-        for j in range(len(ProdutosProposta)):
-            line = ['N/A']*14
-            line[0]  = itens[i].get("numeroProposta")
-            line[1]  = itens[i].get("data")
-            line[2]  = itens[i].get("dataProximoContato", "")
-            line[3]  = vendedor
-            line[4]  = itens[i].get("situacao", [])
-            line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
-            line[6]  = float(ProdutosProposta[j].get("valorUnitario")) * int(ProdutosProposta[j].get("quantidade"))
-            try:
-                line[7]  = contato.get("nome", "")
-                line[8]  = contato.get("observacoesDoContato", "")
-                line[9]  = contato.get("telefone", "")
-                line[10] = contato.get("celular", "")
-                line[11] = contato.get("email", "")
-            except:
-                pass
-            line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
-            line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
+        if vendedorGetParamether != "todos" and vendedorGetParamether != vendedor.lower():
+            keep = False
 
-            linhasDoDF.append(line)
+        if keep: 
+
+            for j in range(len(ProdutosProposta)):
+                line = ['N/A']*14
+                line[0]  = itens[i].get("numeroProposta")
+                line[1]  = itens[i].get("data")
+                line[2]  = itens[i].get("dataProximoContato", "")
+                line[3]  = vendedor
+                line[4]  = situacao
+                line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
+                line[6]  = float(ProdutosProposta[j].get("valorUnitario")) * int(ProdutosProposta[j].get("quantidade"))
+                try:
+                    line[7]  = contato.get("nome", "")
+                    line[8]  = contato.get("observacoesDoContato", "")
+                    line[9]  = contato.get("telefone", "")
+                    line[10] = contato.get("celular", "")
+                    line[11] = contato.get("email", "")
+                except:
+                    pass
+                line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
+                line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
+
+                linhasDoDF.append(line)
+
+        keep = True
 
     arquivo = gerar_excel(titulos, linhasDoDF)
 
