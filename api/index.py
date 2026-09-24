@@ -3434,8 +3434,9 @@ def conferirLista():
     try:
         data_inicio = request.args.get("data_inicio")
         data_fim = request.args.get("data_fim")
+        offset = request.args.get("offset")
 
-        response = tiny_request("GET", f"/orcamentos?data_fim={data_fim}")
+        response = tiny_request("GET", f"/orcamentos?offset={offset}")
 
         dados = resposta_json(response)
 
