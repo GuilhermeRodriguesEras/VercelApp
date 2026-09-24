@@ -3495,7 +3495,6 @@ def gerar_excel(titulos, matrizes, titulosPlanilhas):
 
             ws.column_dimensions[letra_coluna].width = largura
 
-        # Altura do cabeçalho
         ws.row_dimensions[1].height = 24
 
     for indice, matriz in enumerate(matrizes):
@@ -3529,6 +3528,8 @@ def listarParaOSite():
             return 'Amandha'
         elif 'jadhy' in saudacao or 'jadhy' in responsavel:
             return 'Jadhy'
+        elif 'sarah' in saudacao or 'sarah' in responsavel:
+            return 'Sarah'
         else:
             return ''
 
@@ -3542,9 +3543,7 @@ def listarParaOSite():
                'Valor', 'Nome Cliente', 'Aos Cuidados', 'Fone', 'Celular', 'E-mail', 'Desconto', 'Frete']
     
     if 'todos' in empresas or 'mtmktx' in empresas:
-        #fazer o request
-        #linhasMTM 
-        pass
+        linhasMTM = request(f'https://mtm-corte-vercel-app.vercel.app/api/matrizFiltroPropostas?data_inicio={data_inicio}&data_fim={data_fim}&vendedor={vendedorGetParamether}').json()
 
     if 'todos' in empresas or 'luafer' in empresas:
         pass
@@ -3611,7 +3610,7 @@ def listarParaOSite():
 
     if 'todos' in empresas:
         titulosPlanilhas = ['Brfer', 'MTM Corte']
-        matrizes = [linhasDoDF] #TODO adicionar matriz que volta do request MTM
+        matrizes = [linhasDoDF, linhasMTM]
     else:
         titulosPlanilhas = []
         matrizes = []
@@ -3619,9 +3618,8 @@ def listarParaOSite():
             titulosPlanilhas.append('Brfer')
             matrizes.append(linhasDoDF)
         if 'mtmktx' in empresas:
-            pass
-            #titulosPlanilhas.append('MTM Corte')
-            # matrizes.append() <- matriz da request
+            titulosPlanilhas.append('MTM Corte')
+            matrizes.append(linhasMTM)
         if 'luafer' in empresas:
             pass
 
