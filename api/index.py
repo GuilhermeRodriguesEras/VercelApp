@@ -3430,10 +3430,9 @@ def listarPropostas(args = ''):
         }), 500
 
 
-def gerar_excel(titulos, linhasDoDF):
+
+def gerar_excel(titulos, matrizes, titulosPlanilhas):
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Dados"
 
     borda = Border(
         left=Side(style="thin", color="000000"),
@@ -3457,52 +3456,60 @@ def gerar_excel(titulos, linhasDoDF):
         vertical="center"
     )
 
-    for coluna, titulo in enumerate(titulos, start=1):
-        celula = ws.cell(
-            row=1,
-            column=coluna,
-            value=titulo
-        )
+    def preencher_planilha(ws, matriz):
+        for coluna, titulo in enumerate(titulos, start=1):
+            celula = ws.cell(row=1, column=coluna, value=titulo)
 
-        celula.fill = preenchimento_cabecalho
-        celula.font = fonte_cabecalho
-        celula.border = borda
-        celula.alignment = alinhamento
-
-    for numero_linha, linha in enumerate(linhasDoDF, start=2):
-
-        for numero_coluna, valor in enumerate(linha, start=1):
-
-            celula = ws.cell(
-                row=numero_linha,
-                column=numero_coluna,
-                value=valor
-            )
-
+            celula.fill = preenchimento_cabecalho
+            celula.font = fonte_cabecalho
             celula.border = borda
             celula.alignment = alinhamento
 
-    for coluna in ws.columns:
+        for numero_linha, linha in enumerate(matriz, start=2):
 
-        maior_tamanho = 0
-        letra_coluna = coluna[0].column_letter
+            for numero_coluna, valor in enumerate(linha, start=1):
 
-        for celula in coluna:
+                celula = ws.cell(row=numero_linha, column=numero_coluna, value=valor)
 
-            if celula.value is not None:
-                tamanho = len(str(celula.value))
+                celula.border = borda
+                celula.alignment = alinhamento
 
-                if tamanho > maior_tamanho:
-                    maior_tamanho = tamanho
+        for coluna in ws.columns:
 
-        largura = maior_tamanho + 2
+            maior_tamanho = 0
+            letra_coluna = coluna[0].column_letter
 
-        if largura < 10:
-            largura = 10
+            for celula in coluna:
 
-        ws.column_dimensions[letra_coluna].width = largura
+                if celula.value is not None:
 
-    ws.row_dimensions[1].height = 24
+                    tamanho = len(str(celula.value))
+
+                    if tamanho > maior_tamanho:
+                        maior_tamanho = tamanho
+
+            largura = maior_tamanho + 2
+
+            if largura < 10:
+                largura = 10
+
+            ws.column_dimensions[letra_coluna].width = largura
+
+        # Altura do cabeçalho
+        ws.row_dimensions[1].height = 24
+
+    for indice, matriz in enumerate(matrizes):
+
+        nome_planilha = titulosPlanilhas[indice]
+        if indice == 0:
+            ws = wb.active
+            ws.title = nome_planilha
+
+        else:
+            ws = wb.create_sheet(title=nome_planilha)
+
+        preencher_planilha(ws, matriz)
+
     arquivo = BytesIO()
 
     wb.save(arquivo)
@@ -3510,6 +3517,7 @@ def gerar_excel(titulos, linhasDoDF):
     arquivo.seek(0)
 
     return arquivo
+
 
 @app.route("/api/listarParaOSite", methods=["GET"])
 def listarParaOSite():
@@ -3528,65 +3536,96 @@ def listarParaOSite():
     data_fim = request.args.get("data_fim")
     vendedorGetParamether = request.args.get("vendedor").lower()
     situacoes = request.args.getlist("situacoes")
-
-    #TODO adicionar tratamento para o situacoes
-    arrayPropostas = listarPropostas(f"dataInicio={data_inicio}&data_fim={data_fim}")
+    empresas = request.args.getlist("empresa")
 
     titulos = ['Nº Da Proposta', 'Data', 'Data Prox Contato', 'Vendedor', 'Situação', 'Produto', 
                'Valor', 'Nome Cliente', 'Aos Cuidados', 'Fone', 'Celular', 'E-mail', 'Desconto', 'Frete']
+    
+    if 'todos' in empresas or 'mtmktx' in empresas:
+        #fazer o request
+        #linhasMTM 
+        pass
 
-    linhasDoDF = []
-    itens = arrayPropostas.get("itens", [])
+    if 'todos' in empresas or 'luafer' in empresas:
+        pass
 
-    keep = True
+    if 'todos' in empresas or 'brfer' in empresas:
+        arrayPropostas = listarPropostas(f"dataInicio={data_inicio}&data_fim={data_fim}")
 
-    for i in range(len(itens)):
-        IdProposta = itens[i].get("id")
-        requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
-        requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
-
-        aux1 = requestPropostaMomentanea.get("assinatura").get("saudacao", '').lower()
-        aux2 = requestPropostaMomentanea.get("assinatura").get("responsavel", '').lower()
-
-        vendedor = getVendedor(aux1, aux2)
-        situacao = itens[i].get("situacao", "")
-
-        idContato = requestPropostaMomentanea.get("contato").get("id")
-        contato = tiny_request("GET", f"/contatos/{idContato}")
-        contato = resposta_json(contato)
-
-        ProdutosProposta = requestPropostaMomentanea.get("itens", [])
-
-        if vendedorGetParamether != "todos" and vendedorGetParamether != vendedor.lower():
-            keep = False
-
-        if keep: 
-
-            for j in range(len(ProdutosProposta)):
-                line = ['N/A']*14
-                line[0]  = itens[i].get("numeroProposta")
-                line[1]  = itens[i].get("data")
-                line[2]  = itens[i].get("dataProximoContato", "")
-                line[3]  = vendedor
-                line[4]  = situacao
-                line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
-                line[6]  = float(ProdutosProposta[j].get("valorUnitario")) * int(ProdutosProposta[j].get("quantidade"))
-                try:
-                    line[7]  = contato.get("nome", "")
-                    line[8]  = contato.get("observacoesDoContato", "")
-                    line[9]  = contato.get("telefone", "")
-                    line[10] = contato.get("celular", "")
-                    line[11] = contato.get("email", "")
-                except:
-                    pass
-                line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
-                line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
-
-                linhasDoDF.append(line)
+        linhasDoDF = []
+        itens = arrayPropostas.get("itens", [])
 
         keep = True
 
-    arquivo = gerar_excel(titulos, linhasDoDF)
+        for i in range(len(itens)):
+            IdProposta = itens[i].get("id")
+            requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
+            requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
+
+            try:
+                aux1 = requestPropostaMomentanea.get("assinatura").get("saudacao", '').lower()
+            except:
+                aux1 = ''
+            try:
+                aux2 = requestPropostaMomentanea.get("assinatura").get("responsavel", '').lower()
+            except:
+                aux2 = ''
+
+            vendedor = getVendedor(aux1, aux2)
+            situacao = itens[i].get("situacao", "")
+
+            idContato = requestPropostaMomentanea.get("contato").get("id")
+            contato = tiny_request("GET", f"/contatos/{idContato}")
+            contato = resposta_json(contato)
+
+            ProdutosProposta = requestPropostaMomentanea.get("itens", [])
+
+            if vendedorGetParamether != "todos" and vendedorGetParamether != vendedor.lower():
+                keep = False
+
+            if keep: 
+
+                for j in range(len(ProdutosProposta)):
+                    line = ['N/A']*14
+                    line[0]  = itens[i].get("numeroProposta")
+                    line[1]  = itens[i].get("data")
+                    line[2]  = itens[i].get("dataProximoContato", "")
+                    line[3]  = vendedor
+                    line[4]  = situacao
+                    line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
+                    line[6]  = float(ProdutosProposta[j].get("valorUnitario")) * int(ProdutosProposta[j].get("quantidade"))
+                    try:
+                        line[7]  = contato.get("nome", "")
+                        line[8]  = contato.get("observacoesDoContato", "")
+                        line[9]  = contato.get("telefone", "")
+                        line[10] = contato.get("celular", "")
+                        line[11] = contato.get("email", "")
+                    except:
+                        pass
+                    line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
+                    line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
+
+                    linhasDoDF.append(line)
+
+            keep = True
+
+    if 'todos' in empresas:
+        titulosPlanilhas = ['Brfer', 'MTM Corte']
+        matrizes = [linhasDoDF] #TODO adicionar matriz que volta do request MTM
+    else:
+        titulosPlanilhas = []
+        matrizes = []
+        if 'brfer' in empresas:
+            titulosPlanilhas.append('Brfer')
+            matrizes.append(linhasDoDF)
+        if 'mtmktx' in empresas:
+            pass
+            #titulosPlanilhas.append('MTM Corte')
+            # matrizes.append() <- matriz da request
+        if 'luafer' in empresas:
+            pass
+
+    arquivo = gerar_excel(titulos, matrizes, titulosPlanilhas)
 
     return send_file(
         arquivo,
