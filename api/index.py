@@ -3433,9 +3433,8 @@ def listarPropostas(args = ''):
 def conferirLista():
     try:
         data_inicio = request.args.get("data_inicio")
-        data_fim = request.args.get("data_fim")
 
-        response = tiny_request("GET", f"/orcamentos?data_inicio={data_inicio}&data_fim={data_fim}")
+        response = tiny_request("GET", f"/orcamentos?data_inicio={data_inicio}")
 
         dados = resposta_json(response)
 
