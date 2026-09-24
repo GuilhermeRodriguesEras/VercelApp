@@ -3572,12 +3572,12 @@ def listarParaOSite():
         keep = True
 
         for i in range(len(itens)):
+            if not LimitData(data_fim, itens[i].get("data")):
+                continue
+
             IdProposta = itens[i].get("id")
             requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
             requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
-
-            if not LimitData(data_fim, itens[i].get("data")):
-                continue
 
             try:
                 aux1 = requestPropostaMomentanea.get("assinatura").get("saudacao", '').lower()
