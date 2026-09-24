@@ -3586,8 +3586,10 @@ def listarParaOSite():
                 contato = resposta_json(contato)
             except:
                 contato = ""
-
-            ProdutosProposta = requestPropostaMomentanea.get("itens", [])
+            try:
+                ProdutosProposta = requestPropostaMomentanea.get("itens", [])
+            except:
+                continue
 
             if vendedorGetParamether != "todos" and vendedorGetParamether != vendedor.lower():
                 keep = False
