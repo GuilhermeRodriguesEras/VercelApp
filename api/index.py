@@ -3541,11 +3541,9 @@ def listarParaOSite():
             params={
                 'data_inicio': data_inicio,
                 'data_fim': data_fim,
-                'vendedor': vendedorGetParamether
+                'vendedor': vendedor
                 }
             ).json()
-
-        response.raise_for_status()
 
         return response.json()
 
