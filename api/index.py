@@ -3533,6 +3533,14 @@ def listarParaOSite():
         else:
             return ''
 
+    def LimitData(data_limite: str, data_atual: str) -> bool:
+        formato = "%Y-%m-%d"
+        
+        limite = datetime.strptime(data_limite, formato)
+        atual = datetime.strptime(data_atual, formato)
+
+        return atual < limite
+
     data_inicio = request.args.get("data_inicio")
     data_fim = request.args.get("data_fim")
     vendedorGetParamether = request.args.get("vendedor").lower()
@@ -3567,6 +3575,9 @@ def listarParaOSite():
             IdProposta = itens[i].get("id")
             requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
             requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
+
+            if not LimitData(data_fim, itens[i].get("data")):
+                break
 
             try:
                 aux1 = requestPropostaMomentanea.get("assinatura").get("saudacao", '').lower()
