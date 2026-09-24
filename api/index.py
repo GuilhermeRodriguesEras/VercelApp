@@ -3558,13 +3558,15 @@ def listarParaOSite():
         else:
             return ''
 
-    def LimitData(data_limite: str, data_atual: str) -> bool:
+    def DataUmMenorQueADois(data_atual: str, data_limite: str, manobra) -> bool:
         formato = "%Y-%m-%d"
         
         limite = datetime.strptime(data_limite, formato)
         atual = datetime.strptime(data_atual, formato)
 
-        return atual <= limite
+        if manobra:
+            return atual <= limite
+        return atual < limite
 
     data_inicio = request.args.get("data_inicio")
     data_fim = request.args.get("data_fim")
@@ -3589,75 +3591,84 @@ def listarParaOSite():
         pass
 
     if 'todos' in empresas or 'brfer' in empresas:
-        arrayPropostas = listarPropostas(f"dataInicio={data_inicio}&data_fim={data_fim}")
-
+        continueSearchingValues = True
         linhasDoDF = []
-        itens = arrayPropostas.get("itens", [])
+        offset = 0
 
-        keep = True
+        while continueSearchingValues:
+            arrayPropostas = listarPropostas(f"offset={offset}")
 
-        for i in range(len(itens)):
-            if not LimitData(data_fim, itens[i].get("data")):
-                continue
-
-            IdProposta = itens[i].get("id")
-            requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
-            requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
-
-            try:
-                aux1 = requestPropostaMomentanea.get("assinatura").get("saudacao", '').lower()
-            except:
-                aux1 = ''
-            try:
-                aux2 = requestPropostaMomentanea.get("assinatura").get("responsavel", '').lower()
-            except:
-                aux2 = ''
-
-            vendedor = getVendedor(aux1, aux2)
-            situacao = itens[i].get("situacao", "")
-
-            try:
-                idContato = requestPropostaMomentanea.get("contato").get("id")
-                contato = tiny_request("GET", f"/contatos/{idContato}")
-                contato = resposta_json(contato)
-            except:
-                contato = ""
-            try:
-                ProdutosProposta = requestPropostaMomentanea.get("itens", [])
-            except:
-                continue
-
-            if vendedorGetParamether != "todos" and vendedorGetParamether != vendedor.lower():
-                keep = False
-
-            if keep: 
-
-                for j in range(len(ProdutosProposta)):
-                    line = ['N/A']*14
-                    line[0]  = itens[i].get("numeroProposta")
-                    line[1]  = itens[i].get("data")
-                    line[2]  = itens[i].get("dataProximoContato", "")
-                    line[3]  = vendedor
-                    line[4]  = situacao
-                    line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
-                    line[6]  = float(ProdutosProposta[j].get("valorUnitario")) * int(ProdutosProposta[j].get("quantidade"))
-                    try:
-                        line[7]  = contato.get("nome", "")
-                        line[8]  = contato.get("observacoesDoContato", "")
-                        line[9]  = contato.get("telefone", "")
-                        line[10] = contato.get("celular", "")
-                        line[11] = contato.get("email", "")
-                    except:
-                        pass
-                    try:
-                        line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
-                        line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
-                    except:
-                        pass
-
-                    linhasDoDF.append(line)
+            itens = arrayPropostas.get("itens", [])
 
             keep = True
+
+            for i in range(len(itens)):
+                if not DataUmMenorQueADois(itens[i].get("data"), data_fim, True):
+                    continue
+                if DataUmMenorQueADois(itens[i].get("data"), data_inicio, False):
+                    continueSearchingValues = False
+                    break
+
+                IdProposta = itens[i].get("id")
+                requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
+                requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
+
+                try:
+                    aux1 = requestPropostaMomentanea.get("assinatura").get("saudacao", '').lower()
+                except:
+                    aux1 = ''
+                try:
+                    aux2 = requestPropostaMomentanea.get("assinatura").get("responsavel", '').lower()
+                except:
+                    aux2 = ''
+
+                vendedor = getVendedor(aux1, aux2)
+                situacao = itens[i].get("situacao", "")
+
+                try:
+                    idContato = requestPropostaMomentanea.get("contato").get("id")
+                    contato = tiny_request("GET", f"/contatos/{idContato}")
+                    contato = resposta_json(contato)
+                except:
+                    contato = ""
+                try:
+                    ProdutosProposta = requestPropostaMomentanea.get("itens", [])
+                except:
+                    continue
+
+                if vendedorGetParamether != "todos" and vendedorGetParamether != vendedor.lower():
+                    keep = False
+
+                if keep: 
+
+                    for j in range(len(ProdutosProposta)):
+                        line = ['N/A']*14
+                        line[0]  = itens[i].get("numeroProposta")
+                        line[1]  = itens[i].get("data")
+                        line[2]  = itens[i].get("dataProximoContato", "")
+                        line[3]  = vendedor
+                        line[4]  = situacao
+                        line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
+                        line[6]  = float(ProdutosProposta[j].get("valorUnitario")) * int(ProdutosProposta[j].get("quantidade"))
+                        try:
+                            line[7]  = contato.get("nome", "")
+                            line[8]  = contato.get("observacoesDoContato", "")
+                            line[9]  = contato.get("telefone", "")
+                            line[10] = contato.get("celular", "")
+                            line[11] = contato.get("email", "")
+                        except:
+                            pass
+                        try:
+                            line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
+                            line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
+                        except:
+                            pass
+
+                        linhasDoDF.append(line)
+
+                keep = True
+
+            offset += 100
 
     if 'todos' in empresas:
         titulosPlanilhas = ['Brfer', 'MTM Corte']
