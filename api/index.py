@@ -3539,7 +3539,7 @@ def listarParaOSite():
         limite = datetime.strptime(data_limite, formato)
         atual = datetime.strptime(data_atual, formato)
 
-        return atual < limite
+        return atual >= limite
 
     data_inicio = request.args.get("data_inicio")
     data_fim = request.args.get("data_fim")
