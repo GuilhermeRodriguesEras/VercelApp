@@ -3598,6 +3598,7 @@ def listarParaOSite():
         while continueSearchingValues:
             arrayPropostas = listarPropostas(f"offset={offset}")
 
+            print(arrayPropostas)
             itens = arrayPropostas.get("itens", [])
 
             keep = True
