@@ -29,8 +29,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 
-from concurrent.futures import ThreadPoolExecutor
-
 class TinyHTMLParagraphParser(HTMLParser):
 
     TAGS_FORMATACAO = {"b", "strong", "i", "em", "u"}
@@ -3535,18 +3533,6 @@ def listarParaOSite():
         else:
             return ''
 
-    def buscarMTM(data_inicio, data_fim, vendedor):
-        response = requests.get(
-            'https://mtm-corte-vercel-app.vercel.app/api/matrizFiltroPropostas',
-            params={
-                'data_inicio': data_inicio,
-                'data_fim': data_fim,
-                'vendedor': vendedor
-                }
-            ).json()
-
-        return response
-
     data_inicio = request.args.get("data_inicio")
     data_fim = request.args.get("data_fim")
     vendedorGetParamether = request.args.get("vendedor").lower()
@@ -3555,88 +3541,79 @@ def listarParaOSite():
 
     titulos = ['Nº Da Proposta', 'Data', 'Data Prox Contato', 'Vendedor', 'Situação', 'Produto', 
                'Valor', 'Nome Cliente', 'Aos Cuidados', 'Fone', 'Celular', 'E-mail', 'Desconto', 'Frete']
-
-    linhasMTM = []
-    linhasDoDF = []
-    linhasLuafer = []
+    
+    if 'todos' in empresas or 'mtmktx' in empresas:
+      linhasMTM = requests.get(
+        'https://mtm-corte-vercel-app.vercel.app/api/matrizFiltroPropostas',
+        params={
+            'data_inicio': data_inicio,
+            'data_fim': data_fim,
+            'vendedor': vendedorGetParamether
+            }
+        ).json()
       
     if 'todos' in empresas or 'luafer' in empresas:
         pass
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    if 'todos' in empresas or 'brfer' in empresas:
+        arrayPropostas = listarPropostas(f"dataInicio={data_inicio}&data_fim={data_fim}")
 
-        futureMTM = None
+        linhasDoDF = []
+        itens = arrayPropostas.get("itens", [])
 
-        if 'todos' in empresas or 'mtmktx' in empresas:
-            futureMTM = executor.submit(buscarMTM, data_inicio, data_fim, vendedorGetParamether)
-        else:
-            futureMTM = 0
+        keep = True
 
-        if 'todos' in empresas or 'brfer' in empresas:
-            arrayPropostas = listarPropostas(f"dataInicio={data_inicio}&data_fim={data_fim}")
+        for i in range(len(itens)):
+            IdProposta = itens[i].get("id")
+            requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
+            requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
 
-            linhasDoDF = []
-            itens = arrayPropostas.get("itens", [])
+            try:
+                aux1 = requestPropostaMomentanea.get("assinatura").get("saudacao", '').lower()
+            except:
+                aux1 = ''
+            try:
+                aux2 = requestPropostaMomentanea.get("assinatura").get("responsavel", '').lower()
+            except:
+                aux2 = ''
+
+            vendedor = getVendedor(aux1, aux2)
+            situacao = itens[i].get("situacao", "")
+
+            idContato = requestPropostaMomentanea.get("contato").get("id")
+            contato = tiny_request("GET", f"/contatos/{idContato}")
+            contato = resposta_json(contato)
+
+            ProdutosProposta = requestPropostaMomentanea.get("itens", [])
+
+            if vendedorGetParamether != "todos" and vendedorGetParamether != vendedor.lower():
+                keep = False
+
+            if keep: 
+
+                for j in range(len(ProdutosProposta)):
+                    line = ['N/A']*14
+                    line[0]  = itens[i].get("numeroProposta")
+                    line[1]  = itens[i].get("data")
+                    line[2]  = itens[i].get("dataProximoContato", "")
+                    line[3]  = vendedor
+                    line[4]  = situacao
+                    line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
+                    line[6]  = float(ProdutosProposta[j].get("valorUnitario")) * int(ProdutosProposta[j].get("quantidade"))
+                    try:
+                        line[7]  = contato.get("nome", "")
+                        line[8]  = contato.get("observacoesDoContato", "")
+                        line[9]  = contato.get("telefone", "")
+                        line[10] = contato.get("celular", "")
+                        line[11] = contato.get("email", "")
+                    except:
+                        pass
+                    line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
+                    line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
+
+                    linhasDoDF.append(line)
 
             keep = True
-
-            for i in range(len(itens)):
-                IdProposta = itens[i].get("id")
-                requestPropostaMomentanea = tiny_request("GET", f"/orcamentos/{IdProposta}")
-                requestPropostaMomentanea = resposta_json(requestPropostaMomentanea)
-
-                try:
-                    aux1 = requestPropostaMomentanea.get("assinatura").get("saudacao", '').lower()
-                except:
-                    aux1 = ''
-                try:
-                    aux2 = requestPropostaMomentanea.get("assinatura").get("responsavel", '').lower()
-                except:
-                    aux2 = ''
-
-                vendedor = getVendedor(aux1, aux2)
-                situacao = itens[i].get("situacao", "")
-
-                try: 
-                    idContato = requestPropostaMomentanea.get("contato").get("id")
-                    contato = tiny_request("GET", f"/contatos/{idContato}")
-                    contato = resposta_json(contato)
-                except:
-                    contato = ''
-
-                ProdutosProposta = requestPropostaMomentanea.get("itens", [])
-
-                if vendedorGetParamether != "todos" and vendedorGetParamether != vendedor.lower():
-                    keep = False
-
-                if keep: 
-
-                    for j in range(len(ProdutosProposta)):
-                        line = ['N/A']*14
-                        line[0]  = itens[i].get("numeroProposta")
-                        line[1]  = itens[i].get("data")
-                        line[2]  = itens[i].get("dataProximoContato", "")
-                        line[3]  = vendedor
-                        line[4]  = situacao
-                        line[5]  = ProdutosProposta[j].get("produto").get("descricao", "")
-                        line[6]  = float(ProdutosProposta[j].get("valorUnitario")) * int(ProdutosProposta[j].get("quantidade"))
-                        try:
-                            line[7]  = contato.get("nome", "")
-                            line[8]  = contato.get("observacoesDoContato", "")
-                            line[9]  = contato.get("telefone", "")
-                            line[10] = contato.get("celular", "")
-                            line[11] = contato.get("email", "")
-                        except:
-                            pass
-                        line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
-                        line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
-
-                        linhasDoDF.append(line)
-
-                keep = True
-
-        if futureMTM is not None:
-            linhasMTM = futureMTM.result()
 
     if 'todos' in empresas:
         titulosPlanilhas = ['Brfer', 'MTM Corte']
@@ -3661,3 +3638,5 @@ def listarParaOSite():
         download_name="FiltroPropostas.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+    #return jsonify({"titulos": titulos, "corpo": linhasDoDF})
