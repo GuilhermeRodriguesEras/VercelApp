@@ -3429,6 +3429,30 @@ def listarPropostas(args = ''):
             "detalhes": str(e)
         }), 500
 
+@app.route("/api/conferir_lista", methods=["GET"])
+def conferirLista():
+    try:
+        data_inicio = request.args.get("data_inicio")
+        data_fim = request.args.get("data_fim")
+
+        response = tiny_request("GET", f"/orcamentos?data_inicio={data_inicio}&data_fim={data_fim}")
+
+        dados = resposta_json(response)
+
+        return dados
+
+    except TinyAPIError as e:
+        return jsonify({
+            "erro": e.mensagem,
+            "status_tiny": e.status,
+            "resposta_tiny": e.resposta
+        }), e.status or 502
+
+    except Exception as e:
+        return jsonify({
+            "erro": "Erro interno ao tentar listar.",
+            "detalhes": str(e)
+        }), 500
 
 
 def gerar_excel(titulos, matrizes, titulosPlanilhas):
