@@ -3603,7 +3603,6 @@ def listarParaOSite():
             keep = True
 
             for i in range(len(itens)):
-                print("PROCESSANDO:", itens[i].get("numeroProposta"),itens[i].get("data"))
 
                 if not DataUmMenorQueADois(itens[i].get("data"), data_fim, True):
                     continue
@@ -3671,6 +3670,8 @@ def listarParaOSite():
                 keep = True
 
             offset += 100
+
+    print(linhasDoDF)
 
     if 'todos' in empresas:
         titulosPlanilhas = ['Brfer', 'MTM Corte']
