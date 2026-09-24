@@ -3545,7 +3545,7 @@ def listarParaOSite():
                 }
             ).json()
 
-        return response.json()
+        return response
 
     data_inicio = request.args.get("data_inicio")
     data_fim = request.args.get("data_fim")
