@@ -3543,8 +3543,15 @@ def listarParaOSite():
                'Valor', 'Nome Cliente', 'Aos Cuidados', 'Fone', 'Celular', 'E-mail', 'Desconto', 'Frete']
     
     if 'todos' in empresas or 'mtmktx' in empresas:
-        linhasMTM = request(f'https://mtm-corte-vercel-app.vercel.app/api/matrizFiltroPropostas?data_inicio={data_inicio}&data_fim={data_fim}&vendedor={vendedorGetParamether}').json()
-
+      linhasMTM = requests.get(
+        'https://mtm-corte-vercel-app.vercel.app/api/matrizFiltroPropostas',
+        params={
+            'data_inicio': data_inicio,
+            'data_fim': data_fim,
+            'vendedor': vendedorGetParamether
+            }
+        ).json()
+      
     if 'todos' in empresas or 'luafer' in empresas:
         pass
 
