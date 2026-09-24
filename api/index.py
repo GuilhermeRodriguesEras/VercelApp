@@ -3673,8 +3673,6 @@ def listarParaOSite():
 
             offset += 100
 
-    print(linhasDoDF)
-
     if 'todos' in empresas:
         titulosPlanilhas = ['Brfer', 'MTM Corte']
         matrizes = [linhasDoDF, linhasMTM]
