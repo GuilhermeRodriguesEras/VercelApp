@@ -3580,9 +3580,12 @@ def listarParaOSite():
             vendedor = getVendedor(aux1, aux2)
             situacao = itens[i].get("situacao", "")
 
-            idContato = requestPropostaMomentanea.get("contato").get("id")
-            contato = tiny_request("GET", f"/contatos/{idContato}")
-            contato = resposta_json(contato)
+            try:
+                idContato = requestPropostaMomentanea.get("contato").get("id")
+                contato = tiny_request("GET", f"/contatos/{idContato}")
+                contato = resposta_json(contato)
+            except:
+                contato = ""
 
             ProdutosProposta = requestPropostaMomentanea.get("itens", [])
 
@@ -3608,8 +3611,11 @@ def listarParaOSite():
                         line[11] = contato.get("email", "")
                     except:
                         pass
-                    line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
-                    line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
+                    try:
+                        line[12] = requestPropostaMomentanea.get("extras").get("desconto", 0)
+                        line[13] = requestPropostaMomentanea.get("extras").get("frete", 0)
+                    except:
+                        pass
 
                     linhasDoDF.append(line)
 
