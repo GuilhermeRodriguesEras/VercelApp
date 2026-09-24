@@ -3598,12 +3598,13 @@ def listarParaOSite():
         while continueSearchingValues:
             arrayPropostas = listarPropostas(f"offset={offset}")
 
-            print(arrayPropostas)
             itens = arrayPropostas.get("itens", [])
 
             keep = True
 
             for i in range(len(itens)):
+                print("PROCESSANDO:", itens[i].get("numeroProposta"),itens[i].get("data"))
+
                 if not DataUmMenorQueADois(itens[i].get("data"), data_fim, True):
                     continue
                 if DataUmMenorQueADois(itens[i].get("data"), data_inicio, False):
