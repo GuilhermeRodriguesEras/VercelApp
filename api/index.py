@@ -540,7 +540,8 @@ def gerar_pdf_proposta(dados_front, dados_orcamento, contato, orcamento_id):
         "<h1>Condições de pagamento:</h1><br/>"
         f"<h2>Total: <b> R$ {numero_pt(total_carrinho)} </b></h2><br/>"
         f"<h2>Pagamento à vista com desconto: <b> R$ {numero_pt(valor_avista)}</b></h2><br/>"
-        f"<h2><b>3x de R$ {numero_pt(valor_3x)}</b> sem juros</h2><br/><br/>"
+        f"<h2><b>3x de R$ {numero_pt(valor_3x)}</b> sem juros</h2><br/>"
+        f"<h2><b>12x de R$ {numero_pt(valor_12x)}</b> com juros no cartão. </h2><br/><br/>"
         "*Frete a combinar. Entre em contato com nosso time de vendas para obter uma cotação."
     )
     observacoes_html = escape_html(observacoes).replace("\n", "<br/>")
@@ -2642,6 +2643,7 @@ def gerar_proposta():
                 f"Total: {dinheiro(total_carrinho)}\n"
                 f"Pagamento à vista com desconto: {dinheiro(valor_avista)}\n"
                 f"3x de {dinheiro(valor_parcela_3x)} sem juros\n"
+                f"12x de {dinheiro(valor_parcela_12x)} com juros no cartão."
             )
         )
 
