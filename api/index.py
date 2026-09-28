@@ -3593,12 +3593,11 @@ def listarParaOSite():
 
             vendedor = getVendedor(aux1, aux2)
             situacao = itens[i].get("situacao", "")
-            situacao = situacao.lower()
 
             if vendedorGetParamether != "todos" and vendedorGetParamether != vendedor.lower():
                 continue
 
-            if (not situacao in situacoes) and (not 'todos' in situacoes):
+            if (not (situacao.lower()) in situacoes) and (not 'todos' in situacoes):
                 continue
 
             try:
