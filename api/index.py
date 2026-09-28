@@ -3547,6 +3547,8 @@ def listarParaOSite():
     situacoes = request.args.getlist("situacoes")
     empresas = request.args.getlist("empresa")
 
+    print(situacoes)
+
     titulos = ['Nº Da Proposta', 'Data', 'Data Prox Contato', 'Vendedor', 'Situação', 'Produto', 
                'Valor', 'Nome Cliente', 'Aos Cuidados', 'Fone', 'Celular', 'E-mail', 'Desconto', 'Frete']
     
@@ -3591,6 +3593,7 @@ def listarParaOSite():
 
             vendedor = getVendedor(aux1, aux2)
             situacao = itens[i].get("situacao", "")
+            situacao = situacao.lower()
 
             if vendedorGetParamether != "todos" and vendedorGetParamether != vendedor.lower():
                 continue
